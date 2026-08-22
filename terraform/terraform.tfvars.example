@@ -1,0 +1,18 @@
+project_name              = "aws-miniflow"
+aws_region               = "us-east-2"
+primary_availability_zone = "us-east-2c"
+
+ec2_instance_type = "t4g.micro"
+ec2_architecture  = "arm64"
+db_instance_class = "db.t4g.micro"
+postgres_engine_version = "17.11"
+
+github_repository  = "pangjie/awstest"
+github_environment = "production"
+
+# Required. For repositories using GitHub's immutable OIDC subjects, obtain the
+# owner and repository IDs after `gh auth login`. Never replace this with `*`.
+github_oidc_subject = "repo:pangjie@2793953/awstest@REPOSITORY_ID:environment:production"
+
+# Keep false for this disposable flow-test environment. Set true for production.
+database_deletion_protection = false
