@@ -110,6 +110,7 @@ data "aws_iam_policy_document" "github_deploy" {
     sid = "PushApplicationImage"
     actions = [
       "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:GetDownloadUrlForLayer",
       "ecr:InitiateLayerUpload",
