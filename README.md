@@ -114,7 +114,13 @@ gh variable set EC2_INSTANCE_ID --body "$(terraform -chdir=terraform output -raw
 
 ### 5. 推送并部署
 
-合并到 `main` 会触发部署，也可以在 GitHub Actions 手动运行 `Deploy production`。首次部署完成后：
+推送到 `main` 只运行 CI，不会自动部署。需要发布时，在 GitHub Actions 中手动运行 `Deploy production`，或在得到明确部署指令后执行：
+
+```bash
+gh workflow run deploy.yml --ref main
+```
+
+部署完成后：
 
 ```bash
 curl "$(terraform -chdir=terraform output -raw website_url)/health/ready"

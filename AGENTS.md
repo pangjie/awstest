@@ -7,3 +7,4 @@
 - Run `npm run check` before handing off changes.
 - Infrastructure changes require `terraform fmt`, `terraform validate`, and a reviewed `terraform plan` before apply.
 - Production deployments use GitHub OIDC and SSM. Do not add long-lived AWS keys or open SSH port 22.
+- Work locally by default. Do not push to GitHub, trigger a deployment, or mutate AWS unless the user explicitly requests that exact action; treat push and deploy as separate approvals.
