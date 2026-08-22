@@ -78,8 +78,20 @@ jobs:
           tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: mode=max
-          sbom: true
+          # ECR basic scanning scans the runnable image manifest, while Buildx
+          # attestations wrap a single-platform image in an OCI index.
+          provenance: false
+          sbom: false
+
+      - name: Wait for ECR basic vulnerability scan
+        run: |
+          aws ecr wait image-scan-complete \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-id "imageTag=${GITHUB_SHA}"
+          aws ecr describe-image-scan-findings \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-id "imageTag=${GITHUB_SHA}" \
+            --query '{Status:imageScanStatus.status,Severity:imageScanFindings.findingSeverityCounts}'
 
       - name: Deploy and wait for readiness
         env:
