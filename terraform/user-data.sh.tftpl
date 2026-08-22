@@ -30,14 +30,14 @@ if [[ "$${IMAGE_URI}" != "$${ECR_REGISTRY}/"* ]]; then
   exit 2
 fi
 
-SECRET_JSON="$$(aws secretsmanager get-secret-value \
+SECRET_JSON="$(aws secretsmanager get-secret-value \
   --region "$${AWS_REGION}" \
   --secret-id "$${DATABASE_SECRET_ARN}" \
   --query SecretString \
   --output text)"
 
-DB_USER="$$(jq -er '.username' <<<"$${SECRET_JSON}")"
-DB_PASSWORD="$$(jq -er '.password' <<<"$${SECRET_JSON}")"
+DB_USER="$(jq -er '.username' <<<"$${SECRET_JSON}")"
+DB_PASSWORD="$(jq -er '.password' <<<"$${SECRET_JSON}")"
 
 umask 077
 {
@@ -58,7 +58,7 @@ docker pull "$${IMAGE_URI}"
 
 PREVIOUS_IMAGE=''
 if docker inspect "$${CONTAINER_NAME}" >/dev/null 2>&1; then
-  PREVIOUS_IMAGE="$$(docker inspect --format '{{.Config.Image}}' "$${CONTAINER_NAME}")"
+  PREVIOUS_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$${CONTAINER_NAME}")"
   docker rm --force "$${CONTAINER_NAME}"
 fi
 
@@ -78,7 +78,7 @@ run_container() {
 run_container "$${IMAGE_URI}"
 
 READY=false
-for attempt in $$(seq 1 30); do
+for attempt in $(seq 1 30); do
   if curl --fail --silent http://127.0.0.1/health/ready >/dev/null; then
     READY=true
     break
