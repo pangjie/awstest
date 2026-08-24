@@ -19,9 +19,11 @@ services:
     build: .
     environment:
       PORT: 3000
-      NODE_ENV: development
+      NODE_ENV: production
       DATABASE_URL: postgres://app:app@db:5432/miniflow
       DB_SSL: disable
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?Set INITIAL_ADMIN_PASSWORD in the ignored .env file}
     depends_on:
       db:
         condition: service_healthy
