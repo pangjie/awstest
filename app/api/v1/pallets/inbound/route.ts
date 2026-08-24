@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../../db";
 import { locations, movements, pallets, skus } from "../../../../../db/schema";
 import { getInternalUser } from "../../../../../lib/internal-auth";
-import { createPalletId, getLocationSlotUsage, refreshLocationStatus } from "../../../../../lib/warehouse-data";
+import { createPalletId, getLocationSlotUsage, lockWarehouseInventory, refreshLocationStatus } from "../../../../../lib/warehouse-data";
 import { recordWarehouseRevision } from "../../../../../lib/warehouse-revision";
 
 type InboundItem={
@@ -37,67 +37,60 @@ export async function POST(request:NextRequest) {
     return NextResponse.json({error:{message:"SKU 和备货库位为必填项"}},{status:400});
   }
   const targetCodes=normalized.map(item=>item.target);
-
   const db=getDb();
-  const uniqueTargetCodes=Array.from(new Set(targetCodes));
-  const targetRows=await db.select().from(locations).where(and(eq(locations.type,"reserve"),inArray(locations.code,uniqueTargetCodes)));
-  const targetByCode=new Map(targetRows.map(location=>[location.code,location]));
-  const invalidTarget=uniqueTargetCodes.find(code=>{
-    const target=targetByCode.get(code);
-    return !target;
-  });
-  if(invalidTarget) return NextResponse.json({error:{message:`备货库位 ${invalidTarget} 无效`}},{status:400});
-  const requestedByTarget=new Map<string,number>();
-  for(const code of targetCodes) requestedByTarget.set(code,(requestedByTarget.get(code)??0)+1);
-  for(const [code,requested] of requestedByTarget) {
-    const target=targetByCode.get(code)!;
-    const usage=await getLocationSlotUsage(target.id);
-    if(!usage||usage.availableSlots<requested) {
-      return NextResponse.json({error:{message:`备货库位 ${code} 剩余容量不足（可用 ${usage?.availableSlots??0} 托）`}},{status:409});
+  const result=await db.transaction(async tx=>{
+    await lockWarehouseInventory(tx);
+    const uniqueTargetCodes=Array.from(new Set(targetCodes));
+    const targetRows=await tx.select().from(locations).where(and(eq(locations.type,"reserve"),inArray(locations.code,uniqueTargetCodes)));
+    const targetByCode=new Map(targetRows.map(location=>[location.code,location]));
+    const invalidTarget=uniqueTargetCodes.find(code=>!targetByCode.has(code));
+    if(invalidTarget)return {error:`备货库位 ${invalidTarget} 无效`,status:400 as const};
+
+    const requestedByTarget=new Map<string,number>();
+    for(const code of targetCodes)requestedByTarget.set(code,(requestedByTarget.get(code)??0)+1);
+    for(const [code,requested] of requestedByTarget) {
+      const usage=await getLocationSlotUsage(targetByCode.get(code)!.id,tx);
+      if(!usage||usage.availableSlots<requested) {
+        return {error:`备货库位 ${code} 剩余容量不足（可用 ${usage?.availableSlots??0} 托）`,status:409 as const};
+      }
     }
-  }
 
-  const skuCodes=Array.from(new Set(normalized.map(item=>item.sku)));
-  const existingSkus=await db.select().from(skus).where(inArray(skus.code,skuCodes));
-  const skuByCode=new Map(existingSkus.map(sku=>[sku.code,sku]));
-  for(const code of skuCodes) {
-    if(skuByCode.has(code)) continue;
-    const item=normalized.find(row=>row.sku===code)!;
-    const [created]=await db.insert(skus).values({code,unit:item.unit,createdAt:new Date().toISOString()}).returning();
-    skuByCode.set(code,created);
-  }
-
-  const now=new Date();
-  const inboundAt=now.toISOString();
-  const usedIds=new Set<string>();
-  const records:Array<{palletId:string;skuId:number;sku:string;locationId:number;location:string;remarks:string}>=[];
-  for(let index=0;index<normalized.length;index++) {
-    const item=normalized[index],target=targetByCode.get(item.target)!,sku=skuByCode.get(item.sku)!;
-    let sequence=(now.getUTCMilliseconds()+index)%9999+1;
-    let palletId=createPalletId(sequence,now);
-    while(usedIds.has(palletId)||(await db.select({id:pallets.id}).from(pallets).where(eq(pallets.id,palletId)).limit(1)).length) {
-      sequence=sequence%9999+1;
-      palletId=createPalletId(sequence,now);
+    const now=new Date(),inboundAt=now.toISOString();
+    const skuCodes=Array.from(new Set(normalized.map(item=>item.sku)));
+    for(const code of skuCodes) {
+      const item=normalized.find(row=>row.sku===code)!;
+      await tx.insert(skus).values({code,unit:item.unit,createdAt:inboundAt}).onConflictDoNothing({target:skus.code});
     }
-    usedIds.add(palletId);
-    records.push({palletId,skuId:sku.id,sku:item.sku,locationId:target.id,location:item.target,remarks:item.remarks});
-  }
+    const skuRows=await tx.select().from(skus).where(inArray(skus.code,skuCodes));
+    const skuByCode=new Map(skuRows.map(sku=>[sku.code,sku]));
+    const usedIds=new Set<string>();
+    const records:Array<{palletId:string;skuId:number;sku:string;locationId:number;location:string;remarks:string}>=[];
+    for(let index=0;index<normalized.length;index++) {
+      const item=normalized[index],target=targetByCode.get(item.target)!,sku=skuByCode.get(item.sku)!;
+      let sequence=(now.getUTCMilliseconds()+index)%9999+1,palletId="";
+      for(let attempts=0;attempts<9_999;attempts++,sequence=sequence%9999+1) {
+        const candidate=createPalletId(sequence,now);
+        if(!usedIds.has(candidate)&&!(await tx.select({id:pallets.id}).from(pallets).where(eq(pallets.id,candidate)).limit(1)).length) {
+          palletId=candidate;break;
+        }
+      }
+      if(!palletId)throw new Error("当天托盘编号已用尽");
+      usedIds.add(palletId);
+      records.push({palletId,skuId:sku.id,sku:item.sku,locationId:target.id,location:item.target,remarks:item.remarks});
+    }
 
-  await db.transaction(async tx=>{
     await tx.insert(pallets).values(records.map(record=>({
       id:record.palletId,skuId:record.skuId,locationId:record.locationId,remarks:record.remarks,
       status:"in_stock" as const,inboundAt,updatedAt:inboundAt,
     })));
     await tx.insert(movements).values(records.map(record=>({
       palletId:record.palletId,skuId:record.skuId,taskId:null,action:"inbound" as const,
-      fromLocationId:null,toLocationId:record.locationId,quantity:0,occurredAt:inboundAt,operatorId:user.id,
+      fromLocationId:null,toLocationId:record.locationId,quantity:0,remarks:record.remarks,occurredAt:inboundAt,operatorId:user.id,
     })));
+    for(const locationId of new Set(records.map(record=>record.locationId)))await refreshLocationStatus(locationId,tx);
+    await recordWarehouseRevision(tx);
+    return {data:{count:records.length,items:records.map(record=>({...record,inboundAt}))}};
   });
-  for(const locationId of new Set(records.map(record=>record.locationId))) await refreshLocationStatus(locationId);
-  await recordWarehouseRevision();
-
-  return NextResponse.json({data:{
-    count:records.length,
-    items:records.map(record=>({...record,inboundAt})),
-  }},{status:201});
+  if("error" in result)return NextResponse.json({error:{message:result.error}},{status:result.status});
+  return NextResponse.json(result,{status:201});
 }

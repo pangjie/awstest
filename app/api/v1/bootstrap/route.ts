@@ -30,7 +30,11 @@ export async function GET() {
   }).from(locations).where(eq(locations.type,"reserve")).orderBy(locations.code);
 
   const recentMovementQuery=db.select({
-    id:movements.id,palletId:movements.palletId,sku:skus.code,remarks:pallets.remarks,taskId:tasks.id,operator:users.name,
+    id:movements.id,sourceId:sql<number>`COALESCE(${movements.sourceRecordId},${movements.id})`,palletId:movements.palletId,sku:skus.code,
+    remarks:sql<string>`COALESCE(${movements.remarks},${pallets.remarks},'')`,
+    taskId:sql<string|null>`COALESCE(${movements.sourceTaskId},${tasks.id})`,
+    operator:sql<string|null>`COALESCE(${movements.sourceOperatorName},${users.name})`,
+    operatorUsername:sql<string|null>`COALESCE(${movements.sourceOperatorUsername},${users.username})`,
     action:movements.action,quantity:movements.quantity,occurredAt:movements.occurredAt,
     fromLocation:sql<string|null>`fl.code`,fromLocationType:sql<"reserve"|"pick"|null>`fl.type`,
     toLocation:sql<string|null>`tl.code`,toLocationType:sql<"reserve"|"pick"|null>`tl.type`,

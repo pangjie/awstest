@@ -2,12 +2,14 @@
 
 import { ChangeEvent, FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/client-fetch";
-import { downloadWorksheet, readFirstWorksheet } from "@/lib/excel-workbook";
+import { downloadWorkbook, downloadWorksheet, readFirstWorksheet, readNamedWorksheet } from "@/lib/excel-workbook";
 import { findLocationMatches } from "@/lib/location-search";
-import { normalizeLocationImportRow, validateLocationImportHeaders, validateUniqueLocationImportRows } from "@/lib/location-import";
+import { LOCATION_IMPORT_HEADERS, normalizeLocationImportRow, validateLocationImportHeaders, validateUniqueLocationImportRows } from "@/lib/location-import";
+import { normalizeReserveInventoryRow, RESERVE_INVENTORY_HEADERS, RESERVE_INVENTORY_SHEET, validateReserveInventoryHeaders, validateReserveInventoryRows } from "@/lib/reserve-inventory-excel";
 import { buildReserveSkuStatistics } from "@/lib/reserve-statistics";
 import { normalizeSkuCatalogRow, validateSkuCatalogHeaders } from "@/lib/sku-catalog";
 import { printWarehouseTaskSheet } from "@/lib/task-sheet-pdf";
+import { normalizeWarehouseLedgerRow, validateWarehouseLedgerHeaders, validateWarehouseLedgerRows, WAREHOUSE_LEDGER_HEADERS, WAREHOUSE_LEDGER_HISTORY_SHEET } from "@/lib/warehouse-ledger-excel";
 import { formatWarehouseDateTimeFixed, formatWarehouseTime, parseStoredTimestamp, previousWarehouseDateKey, toWarehouseDateTimeInput, warehouseDateKey, warehouseDateTimeInputToIso } from "@/lib/warehouse-time";
 
 type Role="admin"|"manager"|"operator";
@@ -15,7 +17,7 @@ type User={id:number;username:string;email:string;name:string;role:Role;active:b
 type Pallet={id:string;skuId:number;sku:string;remarks:string;locationId:number|null;location:string|null;status:"in_stock"|"in_task";inboundAt:string;ageDays:number};
 type Task={id:string;type:"store"|"pick"|"move";status:"pending"|"claimed"|"completed"|"returned"|"partial"|"cancelled";priority:"normal"|"urgent";dueAt:string|null;note:string|null;createdAt:string;completedAt?:string|null;palletId:string|null;sku:string|null;palletRemarks:string|null;plannedQuantity:number|null;actualQuantity:number|null;returnedQuantity:number;itemNote:string|null;itemOutcome:"completed"|"returned"|"partial"|null;itemResolvedAt:string|null;fromLocation:string|null;fromLocationType:"reserve"|"pick"|null;toLocation:string|null;toLocationType:"reserve"|"pick"|null};
 type Location={id:number;code:string;type:"reserve"|"pick";zone:string;capacity:number;status:"available"|"occupied";palletCount:number};
-type Movement={id:number;palletId:string;sku:string;remarks:string|null;taskId:string|null;operator:string|null;action:"inbound"|"pick"|"partial_pick"|"move"|"return"|"adjust";quantity:number;occurredAt:string;fromLocation:string|null;fromLocationType:"reserve"|"pick"|null;toLocation:string|null;toLocationType:"reserve"|"pick"|null};
+type Movement={id:number;sourceId?:number|null;palletId:string;sku:string;remarks:string|null;taskId:string|null;operator:string|null;operatorUsername?:string|null;action:"inbound"|"pick"|"partial_pick"|"move"|"return"|"adjust";quantity:number;occurredAt:string;fromLocation:string|null;fromLocationType:"reserve"|"pick"|null;toLocation:string|null;toLocationType:"reserve"|"pick"|null};
 type Stats={pallets:number;occupied:number;reserveLocations:number;reserveCapacity:number;pendingTasks:number;completedToday:number};
 type AppData={pallets:Pallet[];tasks:Task[];locations:Location[];movements:Movement[];users:User[];invalidSkuCodes:string[];stats:Stats;revision:number};
 type SkuCatalogRecord={id:number;sku:string;barcode:string;client:string;productName:string;declaredChineseName:string;sourceRow:number;importedAt:string};
@@ -304,11 +306,11 @@ export default function WarehouseApp({user}:{user:{name:string;role:Role}}) {
       {active!=="工作台"&&<header><div><h1>{active}</h1></div></header>}
       <div className="content">
         {active==="工作台"&&<Dashboard stats={stats} tasks={pendingTaskGroups} onFlow={setModal} onTask={openTask} go={setActive} data={data!} invalidSkuCodes={invalidSkuCodes} openHistory={()=>{setLedgerEntry({tab:"history",query:""});setActive("仓库台账")}}/>}
-        {active==="备库总表"&&<ReserveTable pallets={data!.pallets} locations={data!.locations} selected={selected} setSelected={setSelected} onFlow={openFlow} notify={notify} onEdit={setEditingRow} onLocation={code=>{setLedgerEntry({tab:"location",query:code});setActive("仓库台账")}} invalidSkuCodes={invalidSkuCodes}/>}
+        {active==="备库总表"&&<ReserveTable pallets={data!.pallets} locations={data!.locations} selected={selected} setSelected={setSelected} onFlow={openFlow} notify={notify} done={async message=>{notify(message);await refresh()}} onEdit={setEditingRow} onLocation={code=>{setLedgerEntry({tab:"location",query:code});setActive("仓库台账")}} invalidSkuCodes={invalidSkuCodes}/>}
         {active==="备货统计"&&<ReserveStatistics pallets={data!.pallets} locations={data!.locations} invalidSkuCodes={invalidSkuCodes}/>}
         {active==="SKU管理"&&<SkuManagement externalRefreshKey={externalSyncKey} onImported={async message=>{notify(message);await refresh()}}/>}
         {active==="库位管理"&&<LocationManagement locations={allLocations} api={requestApi} done={async message=>{notify(message);await refresh()}} loading={pickLocationsLoading} externalError={deferredError}/>}
-        {active==="仓库台账"&&<WarehouseLedger pallets={data!.pallets} locations={allLocations} movements={ledgerMovements??[]} initialTab={ledgerEntry.tab} initialQuery={ledgerEntry.query} invalidSkuCodes={invalidSkuCodes} loading={ledgerLoading||pickLocationsLoading} error={deferredError}/>}
+        {active==="仓库台账"&&<WarehouseLedger pallets={data!.pallets} locations={allLocations} movements={ledgerMovements??[]} initialTab={ledgerEntry.tab} initialQuery={ledgerEntry.query} invalidSkuCodes={invalidSkuCodes} loading={ledgerLoading||pickLocationsLoading} error={deferredError} api={requestApi} done={async message=>{notify(message);await refresh()}}/>}
         {active==="待办任务"&&<TasksView tasks={allTaskGroups} onTask={openTask} invalidSkuCodes={invalidSkuCodes} loading={taskHistoryLoading} error={deferredError}/>}
       </div>
     </section>
@@ -339,7 +341,7 @@ function Metric({label,value,unit,note,color}:{label:string;value:string;unit:st
   return <article className="metric"><div className={`metric-icon ${color}`}>{color==="blue"?"▦":color==="green"?"◎":"✓"}</div><div className="metric-copy"><p>{label}</p><h3><strong>{value}</strong><span>{unit}</span></h3><small>{note}</small></div></article>;
 }
 
-function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,onLocation,onEdit,invalidSkuCodes}:{pallets:Pallet[];locations:Location[];selected:string[];setSelected:(v:string[])=>void;onFlow:(v:"pick"|"move",palletIds?:string[])=>void;notify:(v:string)=>void;onLocation:(v:string)=>void;onEdit:(row:ReserveRow)=>void;invalidSkuCodes:Set<string>}) {
+function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done,onLocation,onEdit,invalidSkuCodes}:{pallets:Pallet[];locations:Location[];selected:string[];setSelected:(v:string[])=>void;onFlow:(v:"pick"|"move",palletIds?:string[])=>void;notify:(v:string)=>void;done:(message:string)=>void|Promise<void>;onLocation:(v:string)=>void;onEdit:(row:ReserveRow)=>void;invalidSkuCodes:Set<string>}) {
   const [skuQuery,setSkuQuery]=useState("");
   const [exactSkuQuery,setExactSkuQuery]=useState("");
   const [locationQuery,setLocationQuery]=useState("");
@@ -348,6 +350,8 @@ function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,onLo
   const [status,setStatus]=useState("all");
   const [sortKey,setSortKey]=useState<SortKey>("location");
   const [sortDirection,setSortDirection]=useState<"asc"|"desc">("asc");
+  const [importing,setImporting]=useState(false);
+  const [importError,setImportError]=useState("");
   useEffect(()=>{
     const media=window.matchMedia("(max-width: 760px)");
     const resetNarrowFilters=()=>{
@@ -399,9 +403,41 @@ function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,onLo
   const selectedRows=rows.filter(row=>selected.includes(reserveRowSelectionKey(row)));
   const selectedPalletIds=selectedRows.flatMap(row=>row.pallet?.status==="in_stock"?[row.pallet.id]:[]);
   const clearFilters=()=>{setSkuQuery("");setExactSkuQuery("");setLocationQuery("");setInboundFrom("");setInboundTo("");setStatus("all")};
-  const exportSelected=()=>{downloadReserveWorkbook(selectedRows);notify(`已导出选中的 ${selectedRows.length} 条记录`)};
+  const exportSelected=async()=>{
+    setImportError("");
+    try {
+      await downloadReserveWorkbook(selectedRows);
+      notify(`已导出选中的 ${selectedRows.length} 条记录`);
+    } catch(error) {
+      setImportError(error instanceof Error?error.message:"备库总表导出失败");
+    }
+  };
+  const importReserveWorkbook=async(event:ChangeEvent<HTMLInputElement>)=>{
+    const input=event.currentTarget,file=input.files?.[0];
+    if(!file)return;
+    setImporting(true);setImportError("");
+    try {
+      if(!file.name.toLowerCase().endsWith(".xlsx"))throw new Error("请选择 .xlsx 格式的备库总表文件");
+      const {headers,rows:sourceRows}=await readNamedWorksheet(await file.arrayBuffer(),RESERVE_INVENTORY_SHEET);
+      validateReserveInventoryHeaders(headers);
+      const normalized=sourceRows.flatMap((row,index)=>{
+        const item=normalizeReserveInventoryRow(row,index+2);
+        return item?[item]:[];
+      });
+      validateReserveInventoryRows(normalized);
+      const response=await requestApi("/api/v1/pallets/import",{method:"POST",body:JSON.stringify({rows:normalized})}) as {data?:{importedRows:number;createdRows:number;updatedRows:number;skippedRows:number}};
+      if(!response.data)throw new Error("服务器没有返回备库总表导入结果");
+      await done(`备库总表导入完成：新增 ${response.data.createdRows.toLocaleString()} 托，更新 ${response.data.updatedRows.toLocaleString()} 托，未变化 ${response.data.skippedRows.toLocaleString()} 托`);
+    } catch(error) {
+      setImportError(error instanceof Error?error.message:"备库总表导入失败");
+    } finally {
+      setImporting(false);input.value="";
+    }
+  };
   const filterCount=[skuQuery,exactSkuQuery,locationQuery,inboundFrom,inboundTo,status==="all"?"":status].filter(Boolean).length;
-  return <section className="panel inventory-panel reserve-table"><div className="panel-title inventory-title"><div><h3>备库托盘与库位总表</h3><p>共 {allRows.length} 个托盘位，当前 {allRows.filter(row=>row.pallet).length} 托在库</p></div><div className="inventory-title-actions selection-toolbar"><b className="selection-count">已选 <strong>{selectedRows.length}</strong> 条记录</b><button className="selected-export" disabled={!selectedRows.length} onClick={exportSelected}>导出已选</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("pick",selectedPalletIds)}>批量取备货</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("move",selectedPalletIds)}>批量迁移</button><button className="cancel-selection" disabled={!selectedRows.length} onClick={()=>setSelected([])}>取消</button></div></div>
+  return <section className="panel inventory-panel reserve-table"><div className="panel-title inventory-title"><div><h3>备库托盘与库位总表</h3><p>共 {allRows.length} 个托盘位，当前 {allRows.filter(row=>row.pallet).length} 托在库</p></div><div className="inventory-title-actions selection-toolbar"><label className={importing?"reserve-import-button busy":"reserve-import-button"}>⇧ {importing?"正在导入…":"导入备库总表"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing} onChange={importReserveWorkbook}/></label><b className="selection-count">已选 <strong>{selectedRows.length}</strong> 条记录</b><button className="selected-export" disabled={!selectedRows.length} onClick={exportSelected}>导出已选</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("pick",selectedPalletIds)}>批量取备货</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("move",selectedPalletIds)}>批量迁移</button><button className="cancel-selection" disabled={!selectedRows.length} onClick={()=>setSelected([])}>取消</button></div></div>
+    <div className="reserve-import-guide"><b>Excel 导入</b><span>兼容“导出已选”生成的备库总表；只新增或更新文件中的有货托盘，不会删除文件未列出的库存。空托盘位会自动忽略，作业中的托盘不能通过 Excel 修改。</span></div>
+    {importError&&<div className="reserve-import-error" role="alert">! {importError}</div>}
     <div className="reserve-filter-panel">
       <div className="reserve-filter-bar">
         <label className="filter-field search-field"><span>库位</span><div><i>⌕</i><input aria-label="搜索库位" value={locationQuery} onChange={e=>setLocationQuery(e.target.value)} placeholder="模糊搜索库位"/></div></label>
@@ -629,7 +665,7 @@ function LocationManagement({locations,api,done,loading,externalError}:{location
       setImporting(false);input.value="";
     }
   };
-  return <section className="panel location-management"><div className="management-head"><div><h3>库位管理</h3><p>备货库位与拣货库位独立管理；即使名称相同，也属于两个不同库位。</p></div><div className="management-head-actions"><a className="location-template-button" href="/neiku-location-import-template.xlsx" download="内库库位导入模板.xlsx">⇩ 下载 Excel 模板</a><label className={importing?"location-import-button busy":"location-import-button"}>⇧ {importing?"正在导入…":"批量导入库位"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing} onChange={importLocations}/></label><button className="primary" onClick={()=>{setAdding(value=>!value);setDraft(null);setError("")}}>＋ 新增{locationTypeLabel(viewType)}</button></div></div>
+  return <section className="panel location-management"><div className="management-head"><div><h3>库位管理</h3><p>备货库位与拣货库位独立管理；即使名称相同，也属于两个不同库位。</p></div><div className="management-head-actions"><button className="location-export-button" disabled={loading||!locations.length} onClick={()=>void downloadLocationImportWorkbook(locations)}>⇩ 导出全部库位</button><a className="location-template-button" href="/neiku-location-import-template.xlsx" download="内库库位导入模板.xlsx">⇩ 下载 Excel 模板</a><label className={importing?"location-import-button busy":"location-import-button"}>⇧ {importing?"正在导入…":"批量导入库位"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing} onChange={importLocations}/></label><button className="primary" onClick={()=>{setAdding(value=>!value);setDraft(null);setError("")}}>＋ 新增{locationTypeLabel(viewType)}</button></div></div>
     {loading&&<div className="deferred-load-state"><span className="deferred-spinner"/>正在按需读取拣货库位…</div>}
     {externalError&&<div className="management-error">! {externalError}</div>}
     <div className="location-import-guide"><b>批量导入规则</b><span>模板只使用“库位、类型、容量”三列。类型填写“备货库位”或“拣货库位”；同名不同类型会分别保存。已有的同类型库位只更新容量，不会删除现有库位。</span></div>
@@ -654,7 +690,7 @@ function InventoryEditModal({row,locations,close,api,done}:{row:ReserveRow;locat
   return <ModalFrame title={pallet?"编辑托盘记录":"编辑备货库位记录"} kicker="MANUAL EDIT" close={close}><form className="inventory-edit-form" onSubmit={submit}>{pallet?<><div className="readonly-pallet"><span>托盘号</span><code>{pallet.id}</code></div><label>SKU<input required value={sku} onChange={e=>setSku(e.target.value.toUpperCase())}/></label><label>备注说明<input value={remarks} onChange={e=>setRemarks(e.target.value)} placeholder="选填"/></label><label>备货库位<select required value={locationCode} onChange={e=>setLocationCode(e.target.value)}>{availableLocations.map(location=><option key={location.id} value={location.code}>{location.code}（可用 {location.code===row.location.code?Math.max(1,availableLocationSlots(location)):availableLocationSlots(location)}）</option>)}</select></label><label>入库时间（美东）<input required type="datetime-local" value={inboundAt} onChange={e=>setInboundAt(e.target.value)}/></label></>:<><div className="location-type-readonly"><span>库位类型</span><b>备货库位</b><small>库位类型是身份的一部分，不能在此转换为拣货库位</small></div><label>库位编码<input required value={code} onChange={e=>setCode(e.target.value.toUpperCase())}/></label><label>区域<input required value={zone} onChange={e=>setZone(e.target.value.toUpperCase())}/></label><label>托盘容量<input required type="number" min="1" max="999" value={capacity} onChange={e=>setCapacity(e.target.value)}/></label></>}{error&&<div className="login-error">! {error}</div>}<div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary" disabled={busy}>{busy?"正在保存…":"保存修改"}</button></div></form></ModalFrame>;
 }
 
-function WarehouseLedger({pallets,locations,movements,initialTab,initialQuery,invalidSkuCodes,loading,error}:{pallets:Pallet[];locations:Location[];movements:Movement[];initialTab:LedgerTab;initialQuery:string;invalidSkuCodes:Set<string>;loading:boolean;error:string}) {
+function WarehouseLedger({pallets,locations,movements,initialTab,initialQuery,invalidSkuCodes,loading,error,api,done}:{pallets:Pallet[];locations:Location[];movements:Movement[];initialTab:LedgerTab;initialQuery:string;invalidSkuCodes:Set<string>;loading:boolean;error:string;api:ApiRequest;done:(message:string)=>void|Promise<void>}) {
   const [tab,setTab]=useState<LedgerTab>(initialTab);
   const [q,setQ]=useState(initialQuery);
   const [action,setAction]=useState("all");
@@ -662,6 +698,8 @@ function WarehouseLedger({pallets,locations,movements,initialTab,initialQuery,in
   const [dateTo,setDateTo]=useState("");
   const [selectedSku,setSelectedSku]=useState("");
   const [selectedLocation,setSelectedLocation]=useState("");
+  const [importing,setImporting]=useState(false);
+  const [transferError,setTransferError]=useState("");
 
   const periodMovements=useMemo(()=>movements.filter(m=>
     (action==="all"||m.action===action)
@@ -708,14 +746,43 @@ function WarehouseLedger({pallets,locations,movements,initialTab,initialQuery,in
   const changeTab=(next:LedgerTab)=>{setTab(next);setQ("");setSelectedSku("");setSelectedLocation("")};
   const clearFilters=()=>{setQ("");setAction("all");setDateFrom("");setDateTo("")};
   const placeholder=tab==="sku"?"搜索 SKU、托盘号或备注":tab==="location"?"搜索库位、SKU 或托盘号":"搜索 SKU、托盘号、备注、库位、任务号或操作人";
+  const importLedger=async(event:ChangeEvent<HTMLInputElement>)=>{
+    const input=event.currentTarget,file=input.files?.[0];
+    if(!file)return;
+    setImporting(true);setTransferError("");
+    try {
+      if(!file.name.toLowerCase().endsWith(".xlsx"))throw new Error("请选择 .xlsx 格式的仓库台账文件");
+      const {headers,rows:sourceRows}=await readNamedWorksheet(await file.arrayBuffer(),WAREHOUSE_LEDGER_HISTORY_SHEET);
+      validateWarehouseLedgerHeaders(headers);
+      const normalized=sourceRows.flatMap((row,index)=>{
+        const item=normalizeWarehouseLedgerRow(row,index+2);
+        return item?[item]:[];
+      });
+      validateWarehouseLedgerRows(normalized);
+      const response=await api("/api/v1/movements",{method:"POST",body:JSON.stringify({action:"import",rows:normalized})}) as {data?:{importedRows:number;createdRows:number;skippedRows:number}};
+      if(!response.data)throw new Error("服务器没有返回台账导入结果");
+      await done(`仓库台账导入完成：新增 ${response.data.createdRows.toLocaleString()} 条，跳过已有 ${response.data.skippedRows.toLocaleString()} 条`);
+    } catch(importError) {
+      setTransferError(importError instanceof Error?importError.message:"仓库台账导入失败");
+    } finally {
+      setImporting(false);input.value="";
+    }
+  };
+  const exportLedger=async()=>{
+    setTransferError("");
+    try {await downloadWarehouseLedgerWorkbook(movements,pallets,locations)}
+    catch(exportError){setTransferError(exportError instanceof Error?exportError.message:"仓库台账导出失败")}
+  };
 
   return <section className="panel warehouse-ledger">
     <div className="ledger-overview">
       <div><span>WAREHOUSE LEDGER</span><h2>仓库台账</h2><p>完整记录 SKU、库位与每一次托盘移动</p></div>
-      <div className="ledger-overview-stats"><p><b>{new Set(movements.map(m=>m.sku)).size}</b><span>历史 SKU</span></p><p><b>{touchedLocations}</b><span>有记录库位</span></p><p><b>{movements.length}</b><span>操作记录</span></p></div>
+      <div className="ledger-overview-right"><div className="ledger-transfer-actions"><label className={importing?"busy":""}>⇧ {importing?"正在导入…":"导入仓库台账"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing||loading} onChange={importLedger}/></label><button disabled={loading||!movements.length} onClick={()=>void exportLedger()}>⇩ 导出全部台账</button></div><div className="ledger-overview-stats"><p><b>{new Set(movements.map(m=>m.sku)).size}</b><span>历史 SKU</span></p><p><b>{touchedLocations}</b><span>有记录库位</span></p><p><b>{movements.length}</b><span>操作记录</span></p></div></div>
     </div>
     {loading&&<div className="deferred-load-state"><span className="deferred-spinner"/>正在按需读取完整仓库台账…</div>}
     {error&&<div className="management-error">! {error}</div>}
+    {transferError&&<div className="management-error">! {transferError}</div>}
+    <div className="ledger-import-guide"><b>通用 Excel</b><span>“导出全部台账”生成的文件可直接再次导入；系统只追加缺失的操作历史并自动跳过重复记录，不会改变托盘当前库位或库存状态。保留记录 ID 有助于精确识别重复记录；系统可补建仅存在于已出库历史中的托盘和 SKU，文件引用的库位必须已存在。</span></div>
     <div className="ledger-tabs" role="tablist" aria-label="仓库台账分类">
       <button role="tab" aria-selected={tab==="sku"} className={tab==="sku"?"active":""} onClick={()=>changeTab("sku")}>SKU 台账</button>
       <button role="tab" aria-selected={tab==="location"} className={tab==="location"?"active":""} onClick={()=>changeTab("location")}>库位台账</button>
@@ -983,7 +1050,7 @@ function AccountsModal({users,close,api,done}:{users:User[];close:()=>void;api:A
   const [adding,setAdding]=useState(false),[name,setName]=useState(""),[username,setUsername]=useState(""),[password,setPassword]=useState(""),[role,setRole]=useState<Role>("operator"),[error,setError]=useState("");
   const create=async(e:FormEvent)=>{e.preventDefault();setError("");try{await api("/api/v1/users",{method:"POST",body:JSON.stringify({name,username,password,role})});setAdding(false);setName("");setUsername("");setPassword("");done("内部账号已创建")}catch(err){setError(err instanceof Error?err.message:"创建失败")}};
   const toggle=async(u:User)=>{try{await api(`/api/v1/users/${u.id}`,{method:"PATCH",body:JSON.stringify({active:!u.active})});done(u.active?"账号已停用":"账号已启用")}catch(err){setError(err instanceof Error?err.message:"操作失败")}};
-  return <ModalFrame title="账户管理" kicker="ADMIN ONLY" close={close}><div className="account-list"><p>管理员可创建内部账号、分配角色并停用账号。</p>{users.map(u=><div key={u.id} className={!u.active?"disabled-user":""}><span>{u.name[0]}</span><div><b>{u.name}</b><small>{u.username} · {u.email}</small></div><em>{roleName(u.role)}</em><button onClick={()=>toggle(u)}>{u.active?"停用":"启用"}</button></div>)}{!adding?<button className="add-account" onClick={()=>setAdding(true)}>＋ 新增内部账号</button>:<form className="account-form" onSubmit={create}><label>姓名<input required value={name} onChange={e=>setName(e.target.value)}/></label><label>登录账号<input required value={username} onChange={e=>setUsername(e.target.value.toLowerCase())}/></label><label>初始密码<input required minLength={12} value={password} onChange={e=>setPassword(e.target.value)}/></label><label>角色<select value={role} onChange={e=>setRole(e.target.value as Role)}><option value="operator">操作员</option><option value="manager">仓库主管</option><option value="admin">管理员</option></select></label>{error&&<div className="login-error">! {error}</div>}<div><button type="button" onClick={()=>setAdding(false)}>取消</button><button className="primary">创建账号</button></div></form>}</div></ModalFrame>;
+  return <ModalFrame title="账户管理" kicker="ADMIN ONLY" close={close}><div className="account-list"><p>管理员可创建内部账号、分配角色并停用账号。</p>{users.map(u=><div key={u.id} className={!u.active?"disabled-user":""}><span>{u.name[0]}</span><div><b>{u.name}</b><small>{u.username} · {u.email}</small></div><em>{roleName(u.role)}</em><button onClick={()=>toggle(u)}>{u.active?"停用":"启用"}</button></div>)}{!adding?<button className="add-account" onClick={()=>setAdding(true)}>＋ 新增内部账号</button>:<form className="account-form" onSubmit={create}><label>姓名<input required value={name} onChange={e=>setName(e.target.value)}/></label><label>登录账号<input required value={username} onChange={e=>setUsername(e.target.value.toLowerCase())}/></label><label>初始密码<input required type="password" autoComplete="new-password" minLength={12} value={password} onChange={e=>setPassword(e.target.value)}/></label><label>角色<select value={role} onChange={e=>setRole(e.target.value as Role)}><option value="operator">操作员</option><option value="manager">仓库主管</option><option value="admin">管理员</option></select></label>{error&&<div className="login-error">! {error}</div>}<div><button type="button" onClick={()=>setAdding(false)}>取消</button><button className="primary">创建账号</button></div></form>}</div></ModalFrame>;
 }
 
 function ModalFrame({title,kicker,close,children,wide=false}:{title:string;kicker:string;close:()=>void;children:React.ReactNode;wide?:boolean}) {
@@ -1020,7 +1087,6 @@ function locationMovementDirection(movement:Movement,location:Location):{label:s
   return {label:"移出",tone:"out"};
 }
 function roleName(role:Role){return role==="admin"?"系统管理员":role==="manager"?"仓库主管":"操作员"}
-function escapeXml(value:string){return value.replace(/[<>&'"]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;","'":"&apos;",'"':"&quot;"}[c]!))}
 function dateKey(value:string){return warehouseDateKey(value)}
 function sortMovementsNewestFirst(rows:Movement[]){return [...rows].sort((a,b)=>parseStoredTimestamp(b.occurredAt).getTime()-parseStoredTimestamp(a.occurredAt).getTime()||b.id-a.id)}
 function availableLocationSlots(location:Location){return Math.max(0,location.capacity-Number(location.palletCount??0))}
@@ -1053,45 +1119,71 @@ async function downloadReserveStatisticsWorkbook(rows:Array<{sku:string;palletCo
   });
 }
 
-function downloadReserveWorkbook(rows:ReserveRow[]) {
-  const values=[
-    ["库位","托盘位","SKU","托盘号","备注说明","入库时间（美东）","库龄（天）","状态"],
-    ...rows.map(row=>[row.location.code,`${row.slotIndex}/${row.location.capacity}`,row.pallet?.sku??"",row.pallet?.id??"",row.pallet?.remarks??"",row.pallet?formatTime(row.pallet.inboundAt):"",row.pallet?.ageDays??"",reserveStatusLabel(reserveRowStatus(row))]),
+async function downloadLocationImportWorkbook(locations:Location[]) {
+  const rows=[...locations].sort((a,b)=>a.type.localeCompare(b.type)||a.code.localeCompare(b.code,"zh-CN",{numeric:true}));
+  const values:Array<Array<string|number>>=[
+    [...LOCATION_IMPORT_HEADERS],
+    ...rows.map(location=>[location.code,locationTypeLabel(location.type),location.capacity]),
   ];
-  const sheetRows=values.map((row,rowIndex)=>`<row r="${rowIndex+1}">${row.map((value,columnIndex)=>`<c r="${columnName(columnIndex)}${rowIndex+1}" t="inlineStr"><is><t>${escapeXml(String(value))}</t></is></c>`).join("")}</row>`).join("");
-  const files:Record<string,string>={
-    "[Content_Types].xml":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
-    "_rels/.rels":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
-    "xl/workbook.xml":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="备库总表" sheetId="1" r:id="rId1"/></sheets></workbook>`,
-    "xl/_rels/workbook.xml.rels":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
-    "xl/styles.xml":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Arial"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>`,
-    "xl/worksheets/sheet1.xml":`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols><col min="1" max="1" width="14" customWidth="1"/><col min="2" max="3" width="14" customWidth="1"/><col min="4" max="4" width="30" customWidth="1"/><col min="5" max="5" width="36" customWidth="1"/><col min="6" max="8" width="16" customWidth="1"/></cols><sheetData>${sheetRows}</sheetData><autoFilter ref="A1:H${values.length}"/></worksheet>`,
-  };
-  const blob=zipWorkbook(files);
-  const url=URL.createObjectURL(blob),anchor=document.createElement("a");
-  anchor.href=url;anchor.download=`内库备库总表-${dateKey(new Date().toISOString())}.xlsx`;anchor.click();
-  window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+  await downloadWorksheet({
+    rows:values,sheetName:"库位",fileName:`内库全部库位-${dateKey(new Date().toISOString())}.xlsx`,
+    widths:[22,16,12],autoFilter:`A1:C${values.length}`,
+  });
 }
 
-function columnName(index:number){let name="";for(let value=index+1;value>0;value=Math.floor((value-1)/26))name=String.fromCharCode(65+(value-1)%26)+name;return name}
-function zipWorkbook(files:Record<string,string>) {
-  const encoder=new TextEncoder(),locals:Uint8Array[]=[],centrals:Uint8Array[]=[];
-  let offset=0;
-  for(const [name,content] of Object.entries(files)) {
-    const nameBytes=encoder.encode(name),data=encoder.encode(content),crc=crc32(data);
-    const local=new Uint8Array(30+nameBytes.length+data.length),localView=new DataView(local.buffer);
-    localView.setUint32(0,0x04034b50,true);localView.setUint16(4,20,true);localView.setUint16(6,0,true);localView.setUint16(8,0,true);
-    localView.setUint32(14,crc,true);localView.setUint32(18,data.length,true);localView.setUint32(22,data.length,true);localView.setUint16(26,nameBytes.length,true);
-    local.set(nameBytes,30);local.set(data,30+nameBytes.length);locals.push(local);
-    const central=new Uint8Array(46+nameBytes.length),centralView=new DataView(central.buffer);
-    centralView.setUint32(0,0x02014b50,true);centralView.setUint16(4,20,true);centralView.setUint16(6,20,true);centralView.setUint16(8,0,true);centralView.setUint16(10,0,true);
-    centralView.setUint32(16,crc,true);centralView.setUint32(20,data.length,true);centralView.setUint32(24,data.length,true);centralView.setUint16(28,nameBytes.length,true);centralView.setUint32(42,offset,true);
-    central.set(nameBytes,46);centrals.push(central);offset+=local.length;
-  }
-  const centralSize=centrals.reduce((size,item)=>size+item.length,0),end=new Uint8Array(22),endView=new DataView(end.buffer);
-  endView.setUint32(0,0x06054b50,true);endView.setUint16(8,centrals.length,true);endView.setUint16(10,centrals.length,true);endView.setUint32(12,centralSize,true);endView.setUint32(16,offset,true);
-  const parts=[...locals,...centrals,end],archive=new Uint8Array(parts.reduce((size,part)=>size+part.length,0));
-  let cursor=0;for(const part of parts){archive.set(part,cursor);cursor+=part.length}
-  return new Blob([archive.buffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+async function downloadWarehouseLedgerWorkbook(movementRows:Movement[],palletRows:Pallet[],locationRows:Location[]) {
+  if(!movementRows.length)throw new Error("当前没有可导出的操作历史");
+  const ordered=sortMovementsNewestFirst(movementRows);
+  const historyValues:Array<Array<string|number>>=[
+    [...WAREHOUSE_LEDGER_HEADERS],
+    ...ordered.map(movement=>[
+      movement.sourceId??movement.id,formatWarehouseDateTimeFixed(movement.occurredAt),actionLabel[movement.action],movement.sku,movement.palletId,
+      movement.fromLocation??"",movement.fromLocationType?locationTypeLabel(movement.fromLocationType):"",
+      movement.toLocation??"",movement.toLocationType?locationTypeLabel(movement.toLocationType):"",
+      movement.remarks?.trim()??"",movement.taskId??"",movement.operatorUsername??"",movement.operator??"",
+    ]),
+  ];
+
+  const skuCodes=Array.from(new Set([...palletRows.map(pallet=>pallet.sku),...movementRows.map(movement=>movement.sku)]))
+    .sort((a,b)=>a.localeCompare(b,"zh-CN",{numeric:true}));
+  const skuValues:Array<Array<string|number>>=[
+    ["SKU","当前托盘数","当前库位","历史操作数","最后操作时间（美东）"],
+    ...skuCodes.map(sku=>{
+      const current=palletRows.filter(pallet=>pallet.sku===sku);
+      const events=ordered.filter(movement=>movement.sku===sku);
+      return [sku,current.length,Array.from(new Set(current.map(pallet=>pallet.location).filter(Boolean))).join("、"),events.length,events[0]?formatWarehouseDateTimeFixed(events[0].occurredAt):""];
+    }),
+  ];
+
+  const sortedLocations=[...locationRows].sort((a,b)=>a.type.localeCompare(b.type)||a.code.localeCompare(b.code,"zh-CN",{numeric:true}));
+  const locationValues:Array<Array<string|number>>=[
+    ["库位","类型","区域","容量","当前占用","当前SKU","移入记录","移出记录","最后操作时间（美东）"],
+    ...sortedLocations.map(location=>{
+      const current=palletRows.filter(pallet=>pallet.locationId===location.id);
+      const events=ordered.filter(movement=>movementTouchesLocation(movement,location));
+      const inbound=events.filter(movement=>movement.toLocation===location.code&&movement.toLocationType===location.type&&!(movement.fromLocation===location.code&&movement.fromLocationType===location.type)).length;
+      const outbound=events.filter(movement=>movement.fromLocation===location.code&&movement.fromLocationType===location.type&&!(movement.toLocation===location.code&&movement.toLocationType===location.type)).length;
+      return [location.code,locationTypeLabel(location.type),location.zone,location.capacity,current.length,Array.from(new Set(current.map(pallet=>pallet.sku))).join("、"),inbound,outbound,events[0]?formatWarehouseDateTimeFixed(events[0].occurredAt):""];
+    }),
+  ];
+
+  await downloadWorkbook({
+    fileName:`内库仓库台账-${dateKey(new Date().toISOString())}.xlsx`,
+    sheets:[
+      {sheetName:WAREHOUSE_LEDGER_HISTORY_SHEET,rows:historyValues,widths:[10,22,15,26,24,18,16,18,16,36,22,18,18],autoFilter:`A1:M${historyValues.length}`},
+      {sheetName:"SKU汇总",rows:skuValues,widths:[28,14,52,14,22],autoFilter:`A1:E${skuValues.length}`},
+      {sheetName:"库位汇总",rows:locationValues,widths:[20,16,12,10,12,44,12,12,22],autoFilter:`A1:I${locationValues.length}`},
+    ],
+  });
 }
-function crc32(data:Uint8Array){let crc=0xffffffff;for(const byte of data){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0)}return (crc^0xffffffff)>>>0}
+
+async function downloadReserveWorkbook(rows:ReserveRow[]) {
+  const values=[
+    [...RESERVE_INVENTORY_HEADERS],
+    ...rows.map(row=>[row.location.code,`${row.slotIndex}/${row.location.capacity}`,row.pallet?.sku??"",row.pallet?.id??"",row.pallet?.remarks??"",row.pallet?formatWarehouseDateTimeFixed(row.pallet.inboundAt):"",row.pallet?.ageDays??"",reserveStatusLabel(reserveRowStatus(row))]),
+  ];
+  await downloadWorksheet({
+    rows:values,sheetName:RESERVE_INVENTORY_SHEET,fileName:`内库备库总表-${dateKey(new Date().toISOString())}.xlsx`,
+    widths:[14,14,14,30,36,22,12,16],autoFilter:`A1:H${values.length}`,
+  });
+}

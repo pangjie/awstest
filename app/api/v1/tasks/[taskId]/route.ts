@@ -13,15 +13,18 @@ export async function DELETE(_:Request,{params}:{params:Promise<{taskId:string}>
   if(!task) return NextResponse.json({error:{message:"任务不存在"}},{status:404});
   if(task.type!=="pick") return NextResponse.json({error:{message:"只能清理没有任何明细和操作记录的异常取备货任务"}},{status:409});
 
-  const deleted=await db.delete(tasks).where(and(
-    eq(tasks.id,taskId),
-    inArray(tasks.status,["pending","claimed"]),
-    sql`NOT EXISTS (SELECT 1 FROM ${taskItems} WHERE ${taskItems.taskId} = ${tasks.id})`,
-    sql`NOT EXISTS (SELECT 1 FROM ${movements} WHERE ${movements.taskId} = ${tasks.id})`,
-  )).returning({id:tasks.id});
+  const deleted=await db.transaction(async tx=>{
+    const rows=await tx.delete(tasks).where(and(
+      eq(tasks.id,taskId),
+      inArray(tasks.status,["pending","claimed"]),
+      sql`NOT EXISTS (SELECT 1 FROM ${taskItems} WHERE ${taskItems.taskId} = ${tasks.id})`,
+      sql`NOT EXISTS (SELECT 1 FROM ${movements} WHERE ${movements.taskId} = ${tasks.id})`,
+    )).returning({id:tasks.id});
+    if(rows.length)await recordWarehouseRevision(tx);
+    return rows;
+  });
   if(!deleted.length) {
     return NextResponse.json({error:{message:"该任务包含子任务或操作记录，为保证库存准确，系统拒绝删除"}},{status:409});
   }
-  await recordWarehouseRevision();
   return NextResponse.json({data:{id:taskId,deleted:true}});
 }

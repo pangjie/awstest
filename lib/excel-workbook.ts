@@ -10,11 +10,7 @@ function cellValue(value:ExcelJS.CellValue):unknown {
   return String(value);
 }
 
-export async function readFirstWorksheet(source:ArrayBuffer) {
-  const workbook=new ExcelJS.Workbook();
-  await workbook.xlsx.load(source);
-  const worksheet=workbook.worksheets[0];
-  if(!worksheet)throw new Error("Excel 中没有可读取的工作表");
+function worksheetData(worksheet:ExcelJS.Worksheet) {
   const width=Math.max(worksheet.columnCount,worksheet.getRow(1).cellCount);
   const headers=Array.from({length:width},(_,index)=>cellValue(worksheet.getCell(1,index+1).value));
   const rows:Array<Record<string,unknown>>=[];
@@ -34,6 +30,22 @@ export async function readFirstWorksheet(source:ArrayBuffer) {
   return {headers,rows};
 }
 
+export async function readFirstWorksheet(source:ArrayBuffer) {
+  const workbook=new ExcelJS.Workbook();
+  await workbook.xlsx.load(source);
+  const worksheet=workbook.worksheets[0];
+  if(!worksheet)throw new Error("Excel 中没有可读取的工作表");
+  return worksheetData(worksheet);
+}
+
+export async function readNamedWorksheet(source:ArrayBuffer,sheetName:string) {
+  const workbook=new ExcelJS.Workbook();
+  await workbook.xlsx.load(source);
+  const worksheet=workbook.getWorksheet(sheetName);
+  if(!worksheet)throw new Error(`Excel 中缺少“${sheetName}”工作表`);
+  return worksheetData(worksheet);
+}
+
 export async function downloadWorksheet(input:{
   rows:Array<Array<string|number>>;
   sheetName:string;
@@ -41,12 +53,26 @@ export async function downloadWorksheet(input:{
   widths?:number[];
   autoFilter?:string;
 }) {
+  await downloadWorkbook({fileName:input.fileName,sheets:[input]});
+}
+
+export async function downloadWorkbook(input:{
+  sheets:Array<{
+    rows:Array<Array<string|number>>;
+    sheetName:string;
+    widths?:number[];
+    autoFilter?:string;
+  }>;
+  fileName:string;
+}) {
   const workbook=new ExcelJS.Workbook();
-  const worksheet=workbook.addWorksheet(input.sheetName);
-  worksheet.addRows(input.rows);
-  input.widths?.forEach((width,index)=>{worksheet.getColumn(index+1).width=width});
-  if(input.autoFilter)worksheet.autoFilter=input.autoFilter;
-  worksheet.views=[{state:"frozen",ySplit:1}];
+  for(const sheet of input.sheets) {
+    const worksheet=workbook.addWorksheet(sheet.sheetName);
+    worksheet.addRows(sheet.rows);
+    sheet.widths?.forEach((width,index)=>{worksheet.getColumn(index+1).width=width});
+    if(sheet.autoFilter)worksheet.autoFilter=sheet.autoFilter;
+    worksheet.views=[{state:"frozen",ySplit:1}];
+  }
   const output=await workbook.xlsx.writeBuffer();
   const blob=new Blob([output],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
   const url=URL.createObjectURL(blob),anchor=document.createElement("a");

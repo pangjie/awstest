@@ -10,12 +10,15 @@ export async function POST(_:Request,{params}:{params:Promise<{taskId:string}>})
   if(!user) return NextResponse.json({error:{message:"请先登录"}},{status:401});
   const {taskId}=await params;
   const db=getDb();
-  const changed=await db.update(tasks).set({status:"claimed",assigneeId:user.id})
-    .where(and(eq(tasks.id,taskId),eq(tasks.status,"pending"))).returning({id:tasks.id});
+  const changed=await db.transaction(async tx=>{
+    const rows=await tx.update(tasks).set({status:"claimed",assigneeId:user.id})
+      .where(and(eq(tasks.id,taskId),eq(tasks.status,"pending"))).returning({id:tasks.id});
+    if(rows.length)await recordWarehouseRevision(tx);
+    return rows;
+  });
   if(!changed.length) {
     const exists=await db.select({id:tasks.id}).from(tasks).where(eq(tasks.id,taskId)).limit(1);
     return NextResponse.json({error:{message:exists.length?"任务已被其他设备领取或处理":"任务不存在"}},{status:exists.length?409:404});
   }
-  await recordWarehouseRevision();
   return NextResponse.json({data:{id:taskId,status:"claimed"}});
 }

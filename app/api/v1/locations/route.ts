@@ -4,6 +4,7 @@ import { getDb } from "../../../../db";
 import { locations } from "../../../../db/schema";
 import { getInternalUser } from "../../../../lib/internal-auth";
 import { normalizeLocationImportRow, validateUniqueLocationImportRows } from "../../../../lib/location-import";
+import { lockWarehouseInventory } from "../../../../lib/warehouse-data";
 import { recordWarehouseRevision } from "../../../../lib/warehouse-revision";
 
 export async function GET(request:NextRequest) {
@@ -61,18 +62,19 @@ export async function POST(request:NextRequest) {
       }));
       const requestedByKey=new Map(payload.map(row=>[`${row.type}:${row.code}`,row]));
       const db=getDb();
-      const existingRows=await db.select({
-        code:locations.code,type:locations.type,
-        palletCount:sql<number>`(SELECT COUNT(*) FROM pallets p WHERE p.location_id = locations.id AND p.status != 'depleted')`,
-      }).from(locations).where(inArray(locations.code,Array.from(new Set(payload.map(row=>row.code)))));
-      const matchingExisting=existingRows.filter(row=>requestedByKey.has(`${row.type}:${row.code}`));
-      const capacityConflict=matchingExisting.map(row=>({
-        ...row,requestedCapacity:requestedByKey.get(`${row.type}:${row.code}`)!.capacity,
-      })).find(row=>Number(row.palletCount)>row.requestedCapacity);
-      if(capacityConflict) {
-        return NextResponse.json({error:{message:`${capacityConflict.code}（${capacityConflict.type==="reserve"?"备货库位":"拣货库位"}）当前占用 ${capacityConflict.palletCount} 托，容量不能改为 ${capacityConflict.requestedCapacity}`}},{status:409});
-      }
-      await db.transaction(async tx=>{
+      const result=await db.transaction(async tx=>{
+        await lockWarehouseInventory(tx);
+        const existingRows=await tx.select({
+          code:locations.code,type:locations.type,
+          palletCount:sql<number>`(SELECT COUNT(*) FROM pallets p WHERE p.location_id = locations.id AND p.status != 'depleted')`,
+        }).from(locations).where(inArray(locations.code,Array.from(new Set(payload.map(row=>row.code)))));
+        const matchingExisting=existingRows.filter(row=>requestedByKey.has(`${row.type}:${row.code}`));
+        const capacityConflict=matchingExisting.map(row=>({
+          ...row,requestedCapacity:requestedByKey.get(`${row.type}:${row.code}`)!.capacity,
+        })).find(row=>Number(row.palletCount)>row.requestedCapacity);
+        if(capacityConflict) {
+          return {error:`${capacityConflict.code}（${capacityConflict.type==="reserve"?"备货库位":"拣货库位"}）当前占用 ${capacityConflict.palletCount} 托，容量不能改为 ${capacityConflict.requestedCapacity}`};
+        }
         for(let offset=0;offset<payload.length;offset+=500) {
           await tx.insert(locations).values(payload.slice(offset,offset+500).map(row=>({...row,status:"available" as const})))
             .onConflictDoUpdate({
@@ -80,10 +82,11 @@ export async function POST(request:NextRequest) {
               set:{capacity:sql`excluded.capacity`,zone:sql`excluded.zone`},
             });
         }
+        await recordWarehouseRevision(tx);
+        return {data:{importedRows:normalized.length,createdRows:normalized.length-matchingExisting.length,updatedRows:matchingExisting.length}};
       });
-      const updatedRows=matchingExisting.length;
-      await recordWarehouseRevision();
-      return NextResponse.json({data:{importedRows:normalized.length,createdRows:normalized.length-updatedRows,updatedRows}});
+      if("error" in result)return NextResponse.json({error:{message:result.error}},{status:409});
+      return NextResponse.json(result);
     } catch(error) {
       return NextResponse.json({error:{message:error instanceof Error?error.message:"库位批量导入失败"}},{status:400});
     }
@@ -94,11 +97,15 @@ export async function POST(request:NextRequest) {
   const capacity=Number(body.capacity??1);
   if(!code) return NextResponse.json({error:{message:"库位编码为必填项"}},{status:400});
   if(!Number.isInteger(capacity)||capacity<1||capacity>999) return NextResponse.json({error:{message:"托盘容量必须是 1–999 的整数"}},{status:400});
-  const db=getDb();
-  if((await db.select({id:locations.id}).from(locations).where(and(eq(locations.code,code),eq(locations.type,type))).limit(1)).length) {
-    return NextResponse.json({error:{message:`${type==="reserve"?"备货":"拣货"}库位编码已存在`}},{status:409});
-  }
-  const [created]=await db.insert(locations).values({code,type,zone,capacity,status:"available"}).returning();
-  await recordWarehouseRevision();
-  return NextResponse.json({data:{...created,palletCount:0}},{status:201});
+  const result=await getDb().transaction(async tx=>{
+    await lockWarehouseInventory(tx);
+    if((await tx.select({id:locations.id}).from(locations).where(and(eq(locations.code,code),eq(locations.type,type))).limit(1)).length) {
+      return {error:`${type==="reserve"?"备货":"拣货"}库位编码已存在`};
+    }
+    const [created]=await tx.insert(locations).values({code,type,zone,capacity,status:"available"}).returning();
+    await recordWarehouseRevision(tx);
+    return {data:{...created,palletCount:0}};
+  });
+  if("error" in result)return NextResponse.json({error:{message:result.error}},{status:409});
+  return NextResponse.json(result,{status:201});
 }

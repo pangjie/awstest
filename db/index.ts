@@ -6,7 +6,7 @@ import * as schema from "./schema";
 const { Pool } = pg;
 let pool:InstanceType<typeof Pool>|null=null;
 
-export function databaseSslConfig(env:NodeJS.ProcessEnv=process.env) {
+function databaseSslConfig(env:NodeJS.ProcessEnv=process.env) {
   const mode=env.DB_SSL??(env.NODE_ENV==="production"?"verify-full":"disable");
   if(mode==="disable")return false;
   if(mode!=="verify-full")throw new Error("DB_SSL must be either disable or verify-full");
@@ -42,11 +42,4 @@ export function getPool() {
 
 export function getDb() {
   return drizzle(getPool(),{schema});
-}
-
-export async function closeDatabase() {
-  if(!pool)return;
-  const active=pool;
-  pool=null;
-  await active.end();
 }

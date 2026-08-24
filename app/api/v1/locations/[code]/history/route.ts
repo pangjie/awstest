@@ -18,7 +18,9 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{code:str
   )).limit(1))[0];
   if(!location) return NextResponse.json({error:{message:"库位不存在"}},{status:404});
   const rows=await db.select({
-    id:movements.id,palletId:movements.palletId,sku:skus.code,remarks:pallets.remarks,taskId:movements.taskId,
+    id:movements.id,sourceId:sql<number>`COALESCE(${movements.sourceRecordId},${movements.id})`,palletId:movements.palletId,sku:skus.code,
+    remarks:sql<string>`COALESCE(${movements.remarks},${pallets.remarks},'')`,
+    taskId:sql<string|null>`COALESCE(${movements.sourceTaskId},${movements.taskId})`,
     action:movements.action,quantity:movements.quantity,occurredAt:movements.occurredAt,
     fromLocation:sql<string|null>`fl.code`,fromLocationType:sql<"reserve"|"pick"|null>`fl.type`,
     toLocation:sql<string|null>`tl.code`,toLocationType:sql<"reserve"|"pick"|null>`tl.type`,

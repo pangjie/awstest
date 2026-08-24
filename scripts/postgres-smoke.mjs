@@ -128,8 +128,92 @@ assert.ok(bootstrap.payload.data.movements.some(movement=>movement.action==="ret
 const movements=await request(`/api/v1/pallets/${encodeURIComponent(movePallet)}/movements`);
 assert.ok(movements.payload.data.some(movement=>movement.action==="inbound"));
 assert.ok(movements.payload.data.some(movement=>movement.action==="move"));
+
+const importedPallet=`E2E-IMPORT-${suffix}`;
+const importedInboundAt=new Date(Date.now()-3_600_000).toISOString();
+const reserveImportRow={
+  location:reserveB,slotIndex:2,slotCapacity:2,sku:skuOne,palletId:importedPallet,
+  remarks:"备库总表导入测试",inboundAt:importedInboundAt,status:"in_stock",sourceRow:2,
+};
+const reserveImport=await request("/api/v1/pallets/import",{method:"POST",body:{rows:[reserveImportRow]}});
+assert.deepEqual(reserveImport.payload.data,{importedRows:1,createdRows:1,updatedRows:0,skippedRows:0});
+const reserveDuplicate=await request("/api/v1/pallets/import",{method:"POST",body:{rows:[reserveImportRow]}});
+assert.deepEqual(reserveDuplicate.payload.data,{importedRows:1,createdRows:0,updatedRows:0,skippedRows:1});
+const reserveUpdate=await request("/api/v1/pallets/import",{
+  method:"POST",body:{rows:[{...reserveImportRow,location:reserveA,slotIndex:2,remarks:"备库总表更新测试"}]},
+});
+assert.deepEqual(reserveUpdate.payload.data,{importedRows:1,createdRows:0,updatedRows:1,skippedRows:0});
+
+const ledgerSourceId=1;
+const ledgerBase={
+  occurredAt:new Date(Date.now()+60_000).toISOString(),action:"adjust",sku:skuOne,palletId:importedPallet,
+  fromLocation:reserveA,fromLocationType:"reserve",toLocation:reserveA,toLocationType:"reserve",
+  remarks:"台账导入测试",taskId:"",operatorUsername:username,operatorName:"",sourceRow:2,
+};
+const ledgerImport=await request("/api/v1/movements",{
+  method:"POST",body:{action:"import",rows:[{...ledgerBase,sourceId:ledgerSourceId}]},
+});
+assert.deepEqual(ledgerImport.payload.data,{importedRows:1,createdRows:1,skippedRows:0});
+const ledgerDuplicate=await request("/api/v1/movements",{
+  method:"POST",body:{action:"import",rows:[{...ledgerBase,sourceId:ledgerSourceId}]},
+});
+assert.deepEqual(ledgerDuplicate.payload.data,{importedRows:1,createdRows:0,skippedRows:1});
+const automaticOccurredAt=new Date(Date.now()+120_000).toISOString();
+const automaticLedger=await request("/api/v1/movements",{
+  method:"POST",body:{action:"import",rows:[{...ledgerBase,sourceId:null,occurredAt:automaticOccurredAt,sourceRow:3}]},
+});
+assert.deepEqual(automaticLedger.payload.data,{importedRows:1,createdRows:1,skippedRows:0});
+const automaticLedgerDuplicate=await request("/api/v1/movements",{
+  method:"POST",body:{action:"import",rows:[{...ledgerBase,sourceId:null,occurredAt:automaticOccurredAt,sourceRow:3}]},
+});
+assert.deepEqual(automaticLedgerDuplicate.payload.data,{importedRows:1,createdRows:0,skippedRows:1});
+const ledgerAfterImport=await request(`/api/v1/movements?pallet=${encodeURIComponent(importedPallet)}&limit=1000`);
+const importedLedgerRow=ledgerAfterImport.payload.data.find(row=>row.action==="adjust"&&row.sourceId===ledgerSourceId);
+assert.ok(importedLedgerRow,"imported ledger rows must retain their source record ID");
+assert.notEqual(importedLedgerRow.id,ledgerSourceId,"source IDs must not replace local movement IDs");
+assert.equal(importedLedgerRow.remarks,"台账导入测试","ledger remarks must be stored as historical snapshots");
+
+const distinctOccurredAt=new Date(Date.now()+180_000).toISOString();
+const distinctLedgerRows=[
+  {...ledgerBase,sourceId:100_001,occurredAt:distinctOccurredAt,remarks:"同刻记录 A",sourceRow:2},
+  {...ledgerBase,sourceId:100_002,occurredAt:distinctOccurredAt,remarks:"同刻记录 B",operatorUsername:"legacy-user",operatorName:"历史操作人",sourceRow:3},
+];
+const distinctLedgerImport=await request("/api/v1/movements",{method:"POST",body:{action:"import",rows:distinctLedgerRows}});
+assert.deepEqual(distinctLedgerImport.payload.data,{importedRows:2,createdRows:2,skippedRows:0});
+const distinctLedger=await request(`/api/v1/movements?pallet=${encodeURIComponent(importedPallet)}&limit=1000`);
+assert.ok(distinctLedger.payload.data.some(row=>row.sourceId===100_001&&row.remarks==="同刻记录 A"));
+assert.ok(distinctLedger.payload.data.some(row=>row.sourceId===100_002&&row.remarks==="同刻记录 B"&&row.operatorUsername==="legacy-user"));
+
+const historicalPallet=`E2E-HISTORY-${suffix}`;
+const historicalTask=`SOURCE-TASK-${suffix}`;
+const historicalInboundAt=new Date(Date.now()-7_200_000).toISOString();
+const historicalPickAt=new Date(Date.now()-3_600_000).toISOString();
+const historicalRows=[
+  {...ledgerBase,sourceId:2,occurredAt:historicalInboundAt,action:"inbound",palletId:historicalPallet,
+    fromLocation:"",fromLocationType:null,toLocation:reserveA,toLocationType:"reserve",taskId:"",
+    operatorUsername:"legacy-user",operatorName:"历史操作人",sourceRow:2},
+  {...ledgerBase,sourceId:3,occurredAt:historicalPickAt,action:"pick",palletId:historicalPallet,
+    fromLocation:reserveA,fromLocationType:"reserve",toLocation:pick,toLocationType:"pick",taskId:historicalTask,
+    operatorUsername:"legacy-user",operatorName:"历史操作人",sourceRow:3},
+];
+const historicalImport=await request("/api/v1/movements",{method:"POST",body:{action:"import",rows:historicalRows}});
+assert.deepEqual(historicalImport.payload.data,{importedRows:2,createdRows:2,skippedRows:0});
+const historicalDuplicate=await request("/api/v1/movements",{method:"POST",body:{action:"import",rows:historicalRows}});
+assert.deepEqual(historicalDuplicate.payload.data,{importedRows:2,createdRows:0,skippedRows:2});
+const historicalLedger=await request(`/api/v1/movements?pallet=${encodeURIComponent(historicalPallet)}&limit=1000`);
+assert.equal(historicalLedger.payload.data.length,2);
+assert.ok(historicalLedger.payload.data.some(row=>row.taskId===historicalTask&&row.operatorUsername==="legacy-user"&&row.operator==="历史操作人"));
+const bootstrapAfterHistory=await request("/api/v1/bootstrap");
+assert.ok(!bootstrapAfterHistory.payload.data.pallets.some(pallet=>pallet.id===historicalPallet),"depleted historical pallets must not become current inventory");
+
+const unsafeHistorical=await request("/api/v1/movements",{
+  method:"POST",expected:400,
+  body:{action:"import",rows:[{...historicalRows[0],sourceId:4,palletId:`E2E-ACTIVE-${suffix}`,sourceRow:2}]},
+});
+assert.match(unsafeHistorical.payload.error.message,/最新状态不是“全部取出”/);
+
 await request(`/api/v1/locations/${encodeURIComponent(reserveA)}/history?type=reserve`);
 await request("/api/auth/logout",{method:"POST"});
 await request("/api/v1/bootstrap",{expected:401});
 
-console.log("PostgreSQL smoke flow passed: auth, location import, SKU merge, inbound, move, pick return, users and histories.");
+console.log("PostgreSQL smoke flow passed: auth, location/SKU/reserve/cross-system ledger imports, inbound, move, pick return, users and histories.");

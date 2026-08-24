@@ -60,22 +60,26 @@ export async function POST(request:NextRequest) {
     if(body.action==="create") {
       const code=text(body.code).toUpperCase();
       if(!code)return NextResponse.json({error:{message:"请填写 SKU"}},{status:400});
-      if((await db.select({id:skuCatalog.id}).from(skuCatalog)
-        .where(and(eq(skuCatalog.active,true),sql`UPPER(${skuCatalog.code})=${code}`)).limit(1)).length) {
-        return NextResponse.json({error:{message:`SKU ${code} 已存在，请勿重复添加`}},{status:409});
-      }
       const importedAt=new Date().toISOString(),importKey=`manual:${crypto.randomUUID()}`;
       try {
-        const [created]=await db.insert(skuCatalog).values({
-          code,barcode:text(body.barcode),client:text(body.client),productName:text(body.productName),
-          declaredChineseName:text(body.declaredChineseName),sourceRow:0,importKey,active:true,importedAt,
-        }).returning({
-          id:skuCatalog.id,sku:skuCatalog.code,barcode:skuCatalog.barcode,client:skuCatalog.client,
-          productName:skuCatalog.productName,declaredChineseName:skuCatalog.declaredChineseName,
-          sourceRow:skuCatalog.sourceRow,importedAt:skuCatalog.importedAt,
+        const result=await db.transaction(async tx=>{
+          if((await tx.select({id:skuCatalog.id}).from(skuCatalog)
+            .where(and(eq(skuCatalog.active,true),sql`UPPER(${skuCatalog.code})=${code}`)).limit(1)).length) {
+            return {duplicate:true as const};
+          }
+          const [created]=await tx.insert(skuCatalog).values({
+            code,barcode:text(body.barcode),client:text(body.client),productName:text(body.productName),
+            declaredChineseName:text(body.declaredChineseName),sourceRow:0,importKey,active:true,importedAt,
+          }).returning({
+            id:skuCatalog.id,sku:skuCatalog.code,barcode:skuCatalog.barcode,client:skuCatalog.client,
+            productName:skuCatalog.productName,declaredChineseName:skuCatalog.declaredChineseName,
+            sourceRow:skuCatalog.sourceRow,importedAt:skuCatalog.importedAt,
+          });
+          await recordWarehouseRevision(tx);
+          return {data:created};
         });
-        await recordWarehouseRevision();
-        return NextResponse.json({data:created},{status:201});
+        if("duplicate" in result)return NextResponse.json({error:{message:`SKU ${code} 已存在，请勿重复添加`}},{status:409});
+        return NextResponse.json(result,{status:201});
       } catch(error) {
         if((error as {code?:string}).code==="23505")return NextResponse.json({error:{message:`SKU ${code} 已存在，请勿重复添加`}},{status:409});
         throw error;
@@ -141,8 +145,8 @@ export async function POST(request:NextRequest) {
         `,[body.importKey]);
         if(candidateIds.length)await client.query("UPDATE sku_catalog SET active=TRUE WHERE id=ANY($1::int[])",[candidateIds]);
         await client.query("DELETE FROM sku_catalog WHERE import_key=$1 AND active=FALSE",[body.importKey]);
+        await client.query("INSERT INTO warehouse_revisions (changed_at) VALUES (CURRENT_TIMESTAMP)");
         await client.query("COMMIT");
-        await recordWarehouseRevision();
         return NextResponse.json({data:{
           importedRows,uniqueCodes,addedCodes:candidateIds.length,updatedCodes:uniqueCodes-candidateIds.length,
           duplicateCodes:importedRows-uniqueCodes,importedAt:body.importedAt,

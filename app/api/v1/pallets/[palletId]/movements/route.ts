@@ -10,7 +10,9 @@ export async function GET(_:Request,{params}:{params:Promise<{palletId:string}>}
   const exists=await getDb().select({id:pallets.id}).from(pallets).where(eq(pallets.id,decodeURIComponent(palletId))).limit(1);
   if(!exists.length) return NextResponse.json({error:{message:"托盘不存在"}},{status:404});
   const rows=await getDb().select({
-    id:movements.id,palletId:movements.palletId,sku:skus.code,remarks:pallets.remarks,taskId:movements.taskId,
+    id:movements.id,sourceId:sql<number>`COALESCE(${movements.sourceRecordId},${movements.id})`,palletId:movements.palletId,sku:skus.code,
+    remarks:sql<string>`COALESCE(${movements.remarks},${pallets.remarks},'')`,
+    taskId:sql<string|null>`COALESCE(${movements.sourceTaskId},${movements.taskId})`,
     action:movements.action,quantity:movements.quantity,occurredAt:movements.occurredAt,
     fromLocation:sql<string|null>`fl.code`,fromLocationType:sql<"reserve"|"pick"|null>`fl.type`,
     toLocation:sql<string|null>`tl.code`,toLocationType:sql<"reserve"|"pick"|null>`tl.type`,

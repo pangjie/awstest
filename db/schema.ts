@@ -95,15 +95,20 @@ export const taskItems = pgTable("task_items", {
 
 export const movements = pgTable("movements", {
   id: serial("id").primaryKey(),
+  sourceRecordId: integer("source_record_id"),
   palletId: text("pallet_id").notNull().references(() => pallets.id),
   skuId: integer("sku_id").notNull().references(() => skus.id),
   taskId: text("task_id").references(() => tasks.id),
+  sourceTaskId: text("source_task_id"),
   action: text("action", { enum:["inbound","pick","partial_pick","move","return","adjust"] }).notNull(),
   fromLocationId: integer("from_location_id").references(() => locations.id),
   toLocationId: integer("to_location_id").references(() => locations.id),
   quantity: integer("quantity").notNull(),
+  remarks: text("remarks"),
   occurredAt: utcTimestamp("occurred_at").notNull().defaultNow(),
   operatorId: integer("operator_id").references(() => users.id),
+  sourceOperatorUsername: text("source_operator_username"),
+  sourceOperatorName: text("source_operator_name"),
 }, t => [
   index("movements_pallet_time_idx").on(t.palletId,t.occurredAt),
   index("movements_sku_time_idx").on(t.skuId,t.occurredAt),

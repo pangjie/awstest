@@ -3,13 +3,14 @@ import { NextResponse } from "next/server";
 export async function GET() {
   return NextResponse.json({
     name: "内库 API",
-    version: "1.8.0",
+    version: "1.9.0",
     baseUrl: "/api/v1",
     authentication: "内库内部账号会话；API 写操作需有效会话",
     resources: {
       pallets: {
         list: "GET /pallets?q=&location=&status=",
         inboundBatch: "POST /pallets/inbound",
+        importReserveWorkbook: "POST /pallets/import（与备库总表导出文件兼容；只新增或更新有货托盘）",
         update: "PATCH /pallets/:palletId",
         history: "GET /pallets/:palletId/movements",
       },
@@ -38,6 +39,7 @@ export async function GET() {
       },
       movements: {
         list: "GET /movements?sku=&pallet=&location=&action=&operator=&from=&to=",
+        import: "POST /movements（action=import；追加缺失历史并跳过重复记录）",
       },
       synchronization: {
         revision: "GET /revision（前端低频检查；版本变化时才刷新仓库数据）",

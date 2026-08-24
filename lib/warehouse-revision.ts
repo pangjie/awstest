@@ -2,8 +2,10 @@ import { desc } from "drizzle-orm";
 import { getDb } from "../db";
 import { warehouseRevisions } from "../db/schema";
 
-export async function recordWarehouseRevision() {
-  await getDb().insert(warehouseRevisions).values({changedAt:new Date().toISOString()});
+type RevisionWriter=Pick<ReturnType<typeof getDb>,"insert">;
+
+export async function recordWarehouseRevision(db:RevisionWriter=getDb()) {
+  await db.insert(warehouseRevisions).values({changedAt:new Date().toISOString()});
 }
 
 export async function getWarehouseRevision() {

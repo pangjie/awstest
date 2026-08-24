@@ -3,21 +3,28 @@ import { getDb } from "../db";
 import { locations, pallets } from "../db/schema";
 import { warehouseDateKey } from "./warehouse-time";
 
+type WarehouseDatabase=ReturnType<typeof getDb>;
+type WarehouseTransaction=Parameters<Parameters<WarehouseDatabase["transaction"]>[0]>[0];
+type WarehouseReader=Pick<WarehouseDatabase,"select">;
+type WarehouseStatusWriter=Pick<WarehouseDatabase,"select"|"update">;
+
+export async function lockWarehouseInventory(tx:WarehouseTransaction) {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(7320250824)`);
+}
+
 export function createPalletId(sequence=1,date=new Date()) {
   const dateStamp=warehouseDateKey(date).slice(2).replaceAll("-","");
   const normalized=((Math.trunc(sequence)-1)%9999+9999)%9999+1;
   return `P${dateStamp}-${String(normalized).padStart(4,"0")}`;
 }
 
-export async function getLocationByCode(code:string,type:"reserve"|"pick") {
-  const rows=await getDb().select().from(locations).where(and(eq(locations.code,code),eq(locations.type,type))).limit(1);
+export async function getLocationByCode(code:string,type:"reserve"|"pick",db:WarehouseReader=getDb()) {
+  const rows=await db.select().from(locations).where(and(eq(locations.code,code),eq(locations.type,type))).limit(1);
   return rows[0]??null;
 }
 
-export async function refreshLocationStatus(locationId:number|null) {
+export async function refreshLocationStatus(locationId:number|null,db:WarehouseStatusWriter=getDb()) {
   if(!locationId) return;
-  const db=getDb();
-  if(!(await db.select({id:locations.id}).from(locations).where(eq(locations.id,locationId)).limit(1))[0]) return;
   const active=await db.select({count:sql<number>`count(*)`}).from(pallets)
     .where(and(eq(pallets.locationId,locationId),ne(pallets.status,"depleted")));
   const activeCount=Number(active[0]?.count??0);
@@ -25,8 +32,7 @@ export async function refreshLocationStatus(locationId:number|null) {
   await db.update(locations).set({status}).where(eq(locations.id,locationId));
 }
 
-export async function getLocationSlotUsage(locationId:number) {
-  const db=getDb();
+export async function getLocationSlotUsage(locationId:number,db:WarehouseReader=getDb()) {
   const location=(await db.select().from(locations).where(eq(locations.id,locationId)).limit(1))[0];
   if(!location) return null;
   const active=await db.select({count:sql<number>`count(*)`}).from(pallets)
