@@ -1,6 +1,15 @@
 output "website_url" {
-  description = "Demo HTTP endpoint."
+  description = "Browser-trusted HTTPS endpoint using the default CloudFront certificate."
+  value       = "https://${aws_cloudfront_distribution.web.domain_name}"
+}
+
+output "origin_http_url" {
+  description = "Direct EC2 HTTP origin. Keep for troubleshooting until origin access is restricted to CloudFront."
   value       = "http://${aws_instance.web.public_dns}"
+}
+
+output "cloudfront_distribution_id" {
+  value = aws_cloudfront_distribution.web.id
 }
 
 output "ec2_instance_id" {
@@ -25,6 +34,11 @@ output "aws_region" {
 output "database_secret_arn" {
   description = "Secret identifier only; the password is never a Terraform output."
   value       = aws_db_instance.postgres.master_user_secret[0].secret_arn
+}
+
+output "initial_admin_secret_arn" {
+  description = "Secret containing the generated first-login administrator credentials; its value is never a Terraform output."
+  value       = aws_secretsmanager_secret.initial_admin.arn
 }
 
 output "secondary_availability_zone" {

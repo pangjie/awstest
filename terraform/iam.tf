@@ -40,6 +40,15 @@ data "aws_iam_policy_document" "web_runtime" {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = [aws_db_instance.postgres.master_user_secret[0].secret_arn]
   }
+
+  statement {
+    sid = "BootstrapInitialAdministrator"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue"
+    ]
+    resources = [aws_secretsmanager_secret.initial_admin.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "web_runtime" {

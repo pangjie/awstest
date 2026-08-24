@@ -1,10 +1,16 @@
 .git
 .github
 .env*
+.next
 node_modules
 npm-debug.log
 terraform
 docs
 test
+tests
+backups
+output
+tmp
+*.tsbuildinfo
 README.md
 SECURITY.md

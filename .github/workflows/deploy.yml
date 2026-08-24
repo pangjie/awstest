@@ -1,11 +1,13 @@
 name: Deploy production
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
   id-token: write
+  pull-requests: read
 
 concurrency:
   group: production
@@ -23,6 +25,20 @@ jobs:
     environment: production
 
     steps:
+      - name: Verify the revision came from a merged pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          merged_pr_count="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq '[.[] | select(.base.ref == "main" and .merged_at != null)] | length')"
+          if [ "${merged_pr_count}" -lt 1 ]; then
+            echo '::error::Production deployment is allowed only for a commit associated with a merged pull request into main.'
+            exit 1
+          fi
+
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 

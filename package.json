@@ -1,20 +1,42 @@
 {
-  "name": "aws-miniflow",
+  "name": "aws-miniflow-neiku",
   "version": "1.0.0",
   "private": true,
-  "description": "A minimal Codex to GitHub to EC2 to RDS delivery flow.",
+  "description": "内库备货管理系统 running on CloudFront, EC2 and PostgreSQL/RDS.",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "node --watch src/server.js",
-    "preview": "node scripts/preview.js",
-    "start": "node src/server.js",
+    "dev": "next dev --hostname 0.0.0.0",
+    "dev:local": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
     "test": "node --test",
-    "check": "node --check src/server.js && node --check src/db.js && node --check public/app.js && npm test"
+    "test:postgres-smoke": "node scripts/postgres-smoke.mjs",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
-    "pg": "^8.16.3"
+    "@aws-sdk/client-secrets-manager": "^3.1116.0",
+    "drizzle-orm": "0.45.2",
+    "exceljs": "^4.4.0",
+    "next": "^16.3.2",
+    "pg": "8.16.3",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@types/pg": "8.15.6",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.4",
+    "eslint-config-next": "^16.3.2",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
   }
 }
