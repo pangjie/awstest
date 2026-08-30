@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 import "./warehouse-enhancements.css";
+import "./timekeeping.css";
 
 const assetRecoveryScript = `(()=>{
   const key="neiku_asset_reload_at";
@@ -40,19 +41,19 @@ export async function generateMetadata(): Promise<Metadata> {
   const base = new URL(`${protocol}://${host}`);
   return {
     metadataBase: base,
-    title: "内库 · 备货管理系统",
-    description: "面向整托盘备货与仓内移动的轻量 WMS",
+    title: "内库",
+    description: "监测仓库内部货物流转、库位任务与人员工况的内部系统",
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
     openGraph: {
       title: "内库",
-      description: "整托备货 · 清晰流转",
+      description: "货物流转 · 人员工况 · 仓内协同",
       type: "website",
-      images: [{ url: new URL("/og.png", base).toString(), width: 1200, height: 630, alt: "内库整托备货管理系统" }],
+      images: [{ url: new URL("/og.png", base).toString(), width: 1730, height: 909, alt: "内库仓内流转与人员工况系统" }],
     },
     twitter: {
       card: "summary_large_image",
       title: "内库",
-      description: "整托备货 · 清晰流转",
+      description: "货物流转 · 人员工况 · 仓内协同",
       images: [new URL("/og.png", base).toString()],
     },
   };

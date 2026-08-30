@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../../db";
 import { locations, movements, pallets, skus } from "../../../../../db/schema";
-import { getInternalUser } from "../../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../../lib/internal-auth";
 import { createPalletId, getLocationSlotUsage, lockWarehouseInventory, refreshLocationStatus } from "../../../../../lib/warehouse-data";
 import { recordWarehouseRevision } from "../../../../../lib/warehouse-revision";
 
@@ -18,8 +18,9 @@ type InboundItem={
 };
 
 export async function POST(request:NextRequest) {
-  const user=await getInternalUser();
-  if(!user) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("dashboard","reserve-inventory");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
+  const user=access.user;
   const body=await request.json().catch(()=>({})) as {items?:InboundItem[]};
   if(!body.items?.length) return NextResponse.json({error:{message:"请至少添加一条备货信息"}},{status:400});
 

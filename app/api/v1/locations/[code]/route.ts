@@ -2,12 +2,13 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../../db";
 import { locations, pallets } from "../../../../../db/schema";
-import { getInternalUser } from "../../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../../lib/internal-auth";
 import { lockWarehouseInventory, refreshLocationStatus } from "../../../../../lib/warehouse-data";
 import { recordWarehouseRevision } from "../../../../../lib/warehouse-revision";
 
 export async function PATCH(request:NextRequest,{params}:{params:Promise<{code:string}>}) {
-  if(!await getInternalUser()) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("reserve-inventory","location-management");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const originalCode=decodeURIComponent((await params).code).trim().toUpperCase();
   const originalType=request.nextUrl.searchParams.get("type");
   if(!["reserve","pick"].includes(originalType??"")) {

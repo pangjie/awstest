@@ -2,10 +2,11 @@ import { and, asc, eq, or, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../../../db";
 import { locations, movements, pallets, skus } from "../../../../../../db/schema";
-import { getInternalUser } from "../../../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../../../lib/internal-auth";
 
 export async function GET(request:NextRequest,{params}:{params:Promise<{code:string}>}) {
-  if(!await getInternalUser()) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("warehouse-ledger");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const {code}=await params;
   const db=getDb();
   const requestedType=request.nextUrl.searchParams.get("type");

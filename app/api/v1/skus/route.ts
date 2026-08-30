@@ -2,10 +2,11 @@ import { and, like, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../db";
 import { skus } from "../../../../db/schema";
-import { getInternalUser } from "../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../lib/internal-auth";
 
 export async function GET(request:NextRequest) {
-  if(!await getInternalUser()) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("dashboard","reserve-inventory","sku-management","warehouse-ledger");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const q=request.nextUrl.searchParams.get("q")?.trim();
   const words=q?.split(/\s+/).filter(Boolean)??[];
   const conditions=words.map(word=>like(skus.code,`%${word}%`));

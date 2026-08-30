@@ -11,7 +11,9 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   passwordSalt: text("password_salt").notNull(),
   role: text("role", { enum:["admin","manager","operator"] }).notNull().default("operator"),
+  pagePermissions: text("page_permissions").array().notNull(),
   active: boolean("active").notNull().default(true),
+  deletedAt: utcTimestamp("deleted_at"),
   createdAt: utcTimestamp("created_at").notNull().defaultNow(),
 });
 

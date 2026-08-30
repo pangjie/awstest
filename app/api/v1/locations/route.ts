@@ -2,13 +2,14 @@ import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../db";
 import { locations } from "../../../../db/schema";
-import { getInternalUser } from "../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../lib/internal-auth";
 import { normalizeLocationImportRow, validateUniqueLocationImportRows } from "../../../../lib/location-import";
 import { lockWarehouseInventory } from "../../../../lib/warehouse-data";
 import { recordWarehouseRevision } from "../../../../lib/warehouse-revision";
 
 export async function GET(request:NextRequest) {
-  if(!await getInternalUser()) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("dashboard","reserve-inventory","location-management","warehouse-ledger");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const params=request.nextUrl.searchParams;
   const q=params.get("q")?.trim();
   const type=params.get("type");
@@ -38,7 +39,8 @@ export async function GET(request:NextRequest) {
 }
 
 export async function POST(request:NextRequest) {
-  if(!await getInternalUser()) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("location-management");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const body=await request.json().catch(()=>({})) as {
     action?:"import";
     code?:string;

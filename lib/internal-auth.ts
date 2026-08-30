@@ -4,11 +4,15 @@ import { cookies, headers } from "next/headers";
 import { getDb } from "../db";
 import { sessions, users } from "../db/schema";
 import { ensureRuntimeSchema } from "../db/runtime";
+import { ALL_PAGE_KEYS, canAccessAnyPage, effectivePagePermissions, type PageKey } from "./page-permissions";
 
 export const SESSION_COOKIE = "neiku_session";
 export const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 const SESSION_REFRESH_THRESHOLD_MS = 6 * 24 * 60 * 60 * 1000;
-export type InternalUser = { id:number; username:string; name:string; role:"admin"|"manager"|"operator" };
+export type InternalUser = { id:number; username:string; name:string; role:"admin"|"manager"|"operator"; pagePermissions:PageKey[] };
+export type PageAuthorization=
+  | {authorized:true;user:InternalUser}
+  | {authorized:false;status:401|403;message:string};
 
 type InitialAdminCredentials={username:string;password:string};
 let initialAdminCredentials:Promise<InitialAdminCredentials>|null=null;
@@ -57,6 +61,7 @@ export async function ensureDefaultAdmin() {
     passwordSalt,
     passwordHash:await hashPassword(password,passwordSalt),
     role:"admin",
+    pagePermissions:[...ALL_PAGE_KEYS],
     createdAt:new Date().toISOString(),
   }).onConflictDoNothing({target:users.username});
 }
@@ -80,7 +85,8 @@ export async function getInternalUser():Promise<InternalUser|null> {
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const rows = await getDb().select({
-    id:users.id, username:users.username, name:users.name, role:users.role, expiresAt:sessions.expiresAt,
+    id:users.id, username:users.username, name:users.name, role:users.role,
+    pagePermissions:users.pagePermissions, expiresAt:sessions.expiresAt,
   }).from(sessions).innerJoin(users, eq(sessions.userId, users.id))
     .where(and(eq(sessions.id, token), gt(sessions.expiresAt, new Date().toISOString()), eq(users.active, true))).limit(1);
   const current = rows[0];
@@ -108,7 +114,17 @@ export async function getInternalUser():Promise<InternalUser|null> {
     }
   }
 
-  return { id:current.id, username:current.username, name:current.name, role:current.role };
+  return {
+    id:current.id, username:current.username, name:current.name, role:current.role,
+    pagePermissions:effectivePagePermissions(current.role,current.pagePermissions),
+  };
+}
+
+export async function authorizePageAccess(...pages:PageKey[]):Promise<PageAuthorization> {
+  const user=await getInternalUser();
+  if(!user)return {authorized:false,status:401,message:"请先登录"};
+  if(!canAccessAnyPage(user,pages))return {authorized:false,status:403,message:"当前账号未被授权访问此页面"};
+  return {authorized:true,user};
 }
 
 export async function requireAdmin() {
