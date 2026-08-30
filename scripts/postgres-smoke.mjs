@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 
 const baseUrl=process.env.SMOKE_BASE_URL??"http://127.0.0.1:3100";
-const username=process.env.SMOKE_ADMIN_USERNAME??"smoke-admin";
-const password=process.env.SMOKE_ADMIN_PASSWORD;
-if(!password)throw new Error("SMOKE_ADMIN_PASSWORD is required");
+const username=process.env.SMOKE_ADMIN_USERNAME??process.env.INITIAL_ADMIN_USERNAME??"smoke-admin";
+const password=process.env.SMOKE_ADMIN_PASSWORD??process.env.INITIAL_ADMIN_PASSWORD;
+if(!password)throw new Error("SMOKE_ADMIN_PASSWORD or INITIAL_ADMIN_PASSWORD is required");
 
 let cookie="";
 
@@ -32,6 +32,8 @@ const reserveB=`E2E-B-${suffix}`;
 const pick=`E2E-P-${suffix}`;
 const skuOne=`E2E-SKU-1-${suffix}`;
 const skuTwo=`E2E-SKU-2-${suffix}`;
+const restrictedUsername=`operator-${suffix.toLowerCase()}`;
+const restrictedPassword="smoke-user-password";
 
 await request("/health/live",{authenticated:false});
 await request("/health/ready",{authenticated:false});
@@ -42,6 +44,46 @@ const login=await request("/api/auth/login",{
 });
 assert.equal(login.payload.data.role,"admin");
 assert.match(cookie,/^neiku_session=/);
+
+const initialTimeEmployees=await request("/api/v1/timekeeping/employees");
+assert.equal(initialTimeEmployees.payload.ok,true);
+const timeEmployeeName=`E2E工时-${suffix}`;
+const createdTimeEmployee=await request("/api/v1/timekeeping/employees",{
+  method:"POST",expected:201,body:{name:timeEmployeeName,type:"OZM"},
+});
+const timeBadge=createdTimeEmployee.payload.employees[0].badgeCode;
+assert.match(timeBadge,/^[34679CFHKMNRVWXY]{8}$/);
+const timeWaveNo=`W-E2E-${suffix}`;
+await request("/api/v1/timekeeping/waves",{
+  method:"POST",expected:201,body:{items:[{waveNo:timeWaveNo,channelName:"E2E渠道",channelType:"多件",skuCount:3,orderCount:5,pieceCount:8}]},
+});
+const timeWorkItems=await request("/api/v1/timekeeping/waves");
+assert.equal(timeWorkItems.payload.standardTasks.length,5);
+const timeWave=timeWorkItems.payload.currentWaves.find(item=>item.waveNo===timeWaveNo);
+assert.ok(timeWave);
+const scanId=label=>`e2e-${suffix}-${label}`;
+const identified=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:timeBadge,requestId:scanId("identify"),terminalId:"e2e"}});
+assert.equal(identified.payload.event,"CLOCK_IN_PENDING");
+const clockedIn=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-CLOCKIN",employeeId:identified.payload.employeeId,requestId:scanId("in"),terminalId:"e2e"}});
+assert.equal(clockedIn.payload.event,"CLOCK_IN");
+const fixedWork=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"JOB-SCAN",employeeId:identified.payload.employeeId,requestId:scanId("fixed"),terminalId:"e2e"}});
+assert.equal(fixedWork.payload.event,"PROJECT_START");
+const waveWork=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:timeWaveNo,employeeId:identified.payload.employeeId,requestId:scanId("wave"),terminalId:"e2e"}});
+assert.equal(waveWork.payload.snapshot.currentProject.assignmentRole,"lead");
+const duplicateWave=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:timeWaveNo,employeeId:identified.payload.employeeId,requestId:scanId("wave"),terminalId:"e2e"}});
+assert.equal(duplicateWave.payload.duplicate,true);
+const completedWave=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-WAVE-COMPLETE",employeeId:identified.payload.employeeId,completeProjectId:timeWave.id,requestId:scanId("complete"),terminalId:"e2e"}});
+assert.equal(completedWave.payload.event,"WAVE_COMPLETE");
+const clockedOut=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-OUT",employeeId:identified.payload.employeeId,requestId:scanId("out"),terminalId:"e2e"}});
+assert.equal(clockedOut.payload.event,"CLOCK_OUT");
+const timeDashboard=await request("/api/v1/timekeeping/dashboard");
+assert.ok(timeDashboard.payload.attendance.some(item=>item.badgeCode===timeBadge));
+const timeReport=await request(`/api/v1/timekeeping/records?badge=${timeBadge}`);
+assert.equal(timeReport.payload.snapshot.employee.badgeCode,timeBadge);
+assert.ok(timeReport.payload.projects.length>=2);
+const timeRevision=await request("/api/v1/timekeeping/revision");
+assert.ok(timeRevision.payload.revision>0);
+await request("/api/v1/timekeeping/employees",{method:"PATCH",body:{id:identified.payload.employeeId,active:false}});
 
 const importedLocations=await request("/api/v1/locations",{
   method:"POST",
@@ -114,9 +156,10 @@ assert.equal(pickCompletion.payload.data.status,"returned");
 
 const createdUser=await request("/api/v1/users",{
   method:"POST",expected:201,
-  body:{username:`operator-${suffix.toLowerCase()}`,name:"端到端测试员",password:"smoke-user-password",role:"operator"},
+  body:{username:restrictedUsername,password:restrictedPassword,pagePermissions:["reserve-inventory"]},
 });
 assert.equal(createdUser.payload.data.role,"operator");
+assert.deepEqual(createdUser.payload.data.pagePermissions,["reserve-inventory"]);
 
 const bootstrap=await request("/api/v1/bootstrap");
 assert.ok(bootstrap.payload.data.locations.some(location=>location.code===reserveB));
@@ -214,6 +257,23 @@ assert.match(unsafeHistorical.payload.error.message,/最新状态不是“全部
 
 await request(`/api/v1/locations/${encodeURIComponent(reserveA)}/history?type=reserve`);
 await request("/api/auth/logout",{method:"POST"});
+await request("/api/auth/login",{
+  method:"POST",authenticated:false,body:{username:restrictedUsername,password:restrictedPassword},
+});
+const restrictedBootstrap=await request("/api/v1/bootstrap");
+assert.deepEqual(restrictedBootstrap.payload.data.currentUser.pagePermissions,["reserve-inventory"]);
+assert.equal(restrictedBootstrap.payload.data.users.length,0);
+assert.ok(restrictedBootstrap.payload.data.pallets.length>0);
+await request("/api/v1/pallets");
+await request("/api/v1/sku-catalog",{expected:403});
+await request("/api/v1/tasks?detail=1",{expected:403});
+await request("/api/v1/users",{expected:403});
+await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-CLOCKIN"},expected:403});
+await request("/api/v1/timekeeping/dashboard",{expected:403});
+await request("/api/v1/timekeeping/records?badge=3467",{expected:403});
+await request("/api/v1/timekeeping/employees",{expected:403});
+await request("/api/v1/timekeeping/waves",{expected:403});
+await request("/api/auth/logout",{method:"POST"});
 await request("/api/v1/bootstrap",{expected:401});
 
-console.log("PostgreSQL smoke flow passed: auth, location/SKU/reserve/cross-system ledger imports, inbound, move, pick return, users and histories.");
+console.log("PostgreSQL smoke flow passed: auth, page permissions, timekeeping scan/employee/wave/report/dashboard, location/SKU/reserve/cross-system ledger imports, inbound, move, pick return, users and histories.");

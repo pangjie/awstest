@@ -2,10 +2,11 @@ import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../db";
 import { locations, pallets, skus } from "../../../../db/schema";
-import { getInternalUser } from "../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../lib/internal-auth";
 
 export async function GET(request: NextRequest) {
-  if (!await getInternalUser()) return NextResponse.json({ error:{ code:"UNAUTHORIZED", message:"请先登录" } }, { status:401 });
+  const access=await authorizePageAccess("dashboard","reserve-inventory");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const params = request.nextUrl.searchParams;
   const q = params.get("q")?.trim();
   const status = params.get("status");

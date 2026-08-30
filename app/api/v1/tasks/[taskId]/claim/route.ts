@@ -2,12 +2,13 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "../../../../../../db";
 import { tasks } from "../../../../../../db/schema";
-import { getInternalUser } from "../../../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../../../lib/internal-auth";
 import { recordWarehouseRevision } from "../../../../../../lib/warehouse-revision";
 
 export async function POST(_:Request,{params}:{params:Promise<{taskId:string}>}) {
-  const user=await getInternalUser();
-  if(!user) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("dashboard","tasks");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
+  const user=access.user;
   const {taskId}=await params;
   const db=getDb();
   const changed=await db.transaction(async tx=>{

@@ -1,8 +1,9 @@
-import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "../../../../db";
 import { locations, movements, pallets, skuCatalog, skus, taskItems, tasks, users } from "../../../../db/schema";
-import { getInternalUser } from "../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../lib/internal-auth";
+import { ALL_PAGE_KEYS, canAccessAnyPage, effectivePagePermissions, type PageKey } from "../../../../lib/page-permissions";
 import { getTaskDetailRows } from "../../../../lib/warehouse-read-model";
 import { previousWarehouseDateKey, warehouseDateKey, warehouseDateTimeInputToIso } from "../../../../lib/warehouse-time";
 import { getWarehouseRevision } from "../../../../lib/warehouse-revision";
@@ -10,8 +11,10 @@ import { getWarehouseRevision } from "../../../../lib/warehouse-revision";
 export const dynamic="force-dynamic";
 
 export async function GET() {
-  const currentUser=await getInternalUser();
-  if(!currentUser) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess(...ALL_PAGE_KEYS);
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
+  const currentUser=access.user;
+  const canSee=(...pages:PageKey[])=>canAccessAnyPage(currentUser,pages);
   const db=getDb();
   const now=new Date();
   const today=warehouseDateKey(now);
@@ -59,16 +62,22 @@ export async function GET() {
   const recentlyResolvedQuery=db.select({resolvedAt:taskItems.resolvedAt}).from(taskItems)
     .where(and(sql`${taskItems.resolvedAt} IS NOT NULL`,gte(taskItems.resolvedAt,recentStart)));
 
+  const needsPallets=canSee("dashboard","reserve-inventory","warehouse-ledger");
+  const needsTasks=canSee("dashboard","tasks");
+  const needsLocations=canSee("dashboard","reserve-inventory","location-management","warehouse-ledger");
+  const needsMovements=canSee("dashboard","warehouse-ledger");
+  const needsInvalidSkus=canSee("dashboard","reserve-inventory","sku-management","warehouse-ledger","tasks");
   const [palletRows,taskRows,locationRows,movementRows,userRows,invalidSkuRows,recentlyResolvedRows,revision]=await Promise.all([
-    palletQuery,
-    getTaskDetailRows("pending"),
-    locationQuery,
-    recentMovementQuery,
+    needsPallets?palletQuery:Promise.resolve([]),
+    needsTasks?getTaskDetailRows("pending"):Promise.resolve([]),
+    needsLocations?locationQuery:Promise.resolve([]),
+    needsMovements?recentMovementQuery:Promise.resolve([]),
     currentUser.role==="admin"?db.select({
-      id:users.id,username:users.username,email:users.email,name:users.name,role:users.role,active:users.active,
-    }).from(users).orderBy(users.name):Promise.resolve([]),
-    invalidSkuQuery,
-    recentlyResolvedQuery,
+      id:users.id,username:users.username,email:users.email,name:users.name,role:users.role,
+      pagePermissions:users.pagePermissions,active:users.active,
+    }).from(users).where(isNull(users.deletedAt)).orderBy(users.name):Promise.resolve([]),
+    needsInvalidSkus?invalidSkuQuery:Promise.resolve([]),
+    canSee("dashboard")?recentlyResolvedQuery:Promise.resolve([]),
     getWarehouseRevision(),
   ]);
 
@@ -77,7 +86,8 @@ export async function GET() {
   const reserveCapacity=reserveRows.reduce((total,location)=>total+location.capacity,0);
   const occupiedSlots=reserveRows.reduce((total,location)=>total+Number(location.palletCount),0);
   return NextResponse.json({data:{
-    pallets:palletRows,tasks:taskRows,locations:locationRows,movements:movementRows,users:userRows,
+    currentUser,pallets:palletRows,tasks:taskRows,locations:locationRows,movements:movementRows,
+    users:userRows.map(row=>({...row,pagePermissions:effectivePagePermissions(row.role,row.pagePermissions)})),
     invalidSkuCodes:invalidSkuRows.map(row=>row.code),revision,
     stats:{pallets:palletRows.length,occupied:occupiedSlots,
       reserveLocations:reserveRows.length,reserveCapacity,pendingTasks:new Set(taskRows.map(t=>t.id)).size,

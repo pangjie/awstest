@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export async function GET() {
   return NextResponse.json({
     name: "内库 API",
-    version: "1.9.0",
+    version: "1.10.0",
     baseUrl: "/api/v1",
     authentication: "内库内部账号会话；API 写操作需有效会话",
     resources: {
@@ -48,7 +48,7 @@ export async function GET() {
         list: "GET /users (admin)",
         create: "POST /users (admin)",
         update: "PATCH /users/:userId (admin)",
-        deactivate: "DELETE /users/:userId (admin)",
+        delete: "DELETE /users/:userId (admin；保留仓库操作历史)",
       },
     },
     conventions: {

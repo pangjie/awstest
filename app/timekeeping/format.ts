@@ -1,0 +1,7 @@
+export function formatDuration(milliseconds:number){const minutes=Math.max(0,Math.floor(milliseconds/60_000));const hours=Math.floor(minutes/60);return `${hours}小时 ${String(minutes%60).padStart(2,"0")}分`}
+export function formatDurationWithSeconds(milliseconds:number){const seconds=Math.max(0,Math.floor(milliseconds/1_000));const hours=Math.floor(seconds/3_600);const minutes=Math.floor(seconds%3_600/60);return `${String(hours).padStart(2,"0")}:${String(minutes).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}`}
+export function formatClock(value:string|null|undefined){return value?new Intl.DateTimeFormat("zh-CN",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(value)):"—"}
+export function formatClockWithSeconds(value:string|null|undefined){return value?new Intl.DateTimeFormat("zh-CN",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).format(new Date(value)):"—"}
+export function dateKey(value:string|Date=new Date()){const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(value instanceof Date?value:new Date(value));const part=(type:Intl.DateTimeFormatPartTypes)=>parts.find(item=>item.type===type)?.value??"";return `${part("year")}-${part("month")}-${part("day")}`}
+export function currentDate(){return dateKey()}
+export function stateLabel(value:string){return ({inactive:"已停用",not_started:"未上班",off:"已下班",ready:"在岗待命",working:"工作中"} as Record<string,string>)[value]??value}

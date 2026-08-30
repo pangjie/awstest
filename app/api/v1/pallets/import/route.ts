@@ -2,7 +2,7 @@ import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../../db";
 import { locations, movements, pallets, skus, warehouseRevisions } from "../../../../../db/schema";
-import { getInternalUser } from "../../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../../lib/internal-auth";
 import { normalizeReserveInventoryRow, validateReserveInventoryRows, type NormalizedReserveInventoryRow } from "../../../../../lib/reserve-inventory-excel";
 import { createPalletId, lockWarehouseInventory } from "../../../../../lib/warehouse-data";
 import { parseStoredTimestamp } from "../../../../../lib/warehouse-time";
@@ -18,8 +18,9 @@ type ExistingPallet={
 };
 
 export async function POST(request:NextRequest) {
-  const user=await getInternalUser();
-  if(!user)return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("reserve-inventory");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
+  const user=access.user;
   try {
     const body=await request.json().catch(()=>({})) as {rows?:Array<Record<string,unknown>>};
     if(!Array.isArray(body.rows))throw new Error("没有收到可导入的备库总表数据");

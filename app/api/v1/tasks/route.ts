@@ -2,14 +2,15 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../db";
 import { pallets, taskItems, tasks } from "../../../../db/schema";
-import { getInternalUser } from "../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../lib/internal-auth";
 import { getLocationByCode, getLocationSlotUsage, lockWarehouseInventory } from "../../../../lib/warehouse-data";
 import { getTaskDetailRows } from "../../../../lib/warehouse-read-model";
 import { warehouseDateKey } from "../../../../lib/warehouse-time";
 import { recordWarehouseRevision } from "../../../../lib/warehouse-revision";
 
 export async function GET(request:NextRequest) {
-  if(!await getInternalUser()) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("tasks");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   if(request.nextUrl.searchParams.get("detail")==="1") {
     return NextResponse.json({data:await getTaskDetailRows("all")},{headers:{"cache-control":"no-store"}});
   }
@@ -17,8 +18,9 @@ export async function GET(request:NextRequest) {
 }
 
 export async function POST(request:NextRequest) {
-  const user=await getInternalUser();
-  if(!user) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("dashboard","reserve-inventory");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
+  const user=access.user;
   const body=await request.json().catch(()=>({})) as {
     type?:"store"|"pick"|"move";priority?:"normal"|"urgent";dueAt?:string;note?:string;
     palletIds?:string[];toLocationCode?:string;

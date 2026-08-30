@@ -2,14 +2,15 @@ import { and, asc, eq, ilike, lt, or, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, getPool } from "../../../../db";
 import { skuCatalog } from "../../../../db/schema";
-import { getInternalUser } from "../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../lib/internal-auth";
 import { SKU_CATALOG_HEADERS } from "../../../../lib/sku-catalog";
 import { recordWarehouseRevision } from "../../../../lib/warehouse-revision";
 
 export const dynamic="force-dynamic";
 
 export async function GET(request:NextRequest) {
-  if(!await getInternalUser())return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("sku-management");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const q=request.nextUrl.searchParams.get("q")?.trim()??"";
   const page=Math.max(1,Number(request.nextUrl.searchParams.get("page")||1));
   const pageSize=Math.min(100,Math.max(20,Number(request.nextUrl.searchParams.get("pageSize")||100)));
@@ -47,7 +48,8 @@ export async function GET(request:NextRequest) {
 }
 
 export async function POST(request:NextRequest) {
-  if(!await getInternalUser())return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("sku-management");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   try {
     const body=await request.json() as {
       action?:"start"|"batch"|"finish"|"create";importKey?:string;importedAt?:string;

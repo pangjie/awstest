@@ -3,13 +3,14 @@ import type { SQL } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../db";
 import { locations, movements, pallets, skus, tasks, users, warehouseRevisions } from "../../../../db/schema";
-import { getInternalUser } from "../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../lib/internal-auth";
 import { normalizeWarehouseLedgerRow, validateWarehouseLedgerRows, type NormalizedWarehouseLedgerRow } from "../../../../lib/warehouse-ledger-excel";
 import { lockWarehouseInventory } from "../../../../lib/warehouse-data";
 import { parseStoredTimestamp } from "../../../../lib/warehouse-time";
 
 export async function GET(request:NextRequest) {
-  if(!await getInternalUser()) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("warehouse-ledger");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const params=request.nextUrl.searchParams;
   const q=params.get("q")?.trim();
   const sku=params.get("sku")?.trim();
@@ -57,7 +58,8 @@ export async function GET(request:NextRequest) {
 }
 
 export async function POST(request:NextRequest) {
-  if(!await getInternalUser())return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("warehouse-ledger");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const body=await request.json().catch(()=>({})) as {action?:"import";rows?:Array<Record<string,unknown>>};
   if(body.action!=="import")return NextResponse.json({error:{message:"不支持的操作"}},{status:400});
   try {

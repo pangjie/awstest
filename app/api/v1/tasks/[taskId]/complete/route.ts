@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "../../../../../../db";
 import { locations, movements, pallets, taskItems, tasks } from "../../../../../../db/schema";
-import { getInternalUser } from "../../../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../../../lib/internal-auth";
 import { createPalletId, getLocationSlotUsage, lockWarehouseInventory, refreshLocationStatus } from "../../../../../../lib/warehouse-data";
 import { recordWarehouseRevision } from "../../../../../../lib/warehouse-revision";
 
@@ -11,8 +11,9 @@ type CompletionResult=
   |{data:{id:string;status:string;palletId?:string;itemOutcome?:string;allConfirmed?:boolean}};
 
 export async function POST(request:NextRequest,{params}:{params:Promise<{taskId:string}>}) {
-  const user=await getInternalUser();
-  if(!user)return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("dashboard","tasks");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
+  const user=access.user;
   const {taskId}=await params;
   const body=await request.json().catch(()=>({})) as {outcome?:"completed"|"returned"|"partial";palletId?:string};
   if(!["completed","returned","partial"].includes(body.outcome??"")) {

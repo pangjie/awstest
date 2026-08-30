@@ -1,8 +1,10 @@
 import { getPool } from "./index";
+import { ALL_PAGE_KEYS } from "../lib/page-permissions";
 
 let schemaInitialization:Promise<void>|null=null;
-const POSTGRES_RUNTIME_SCHEMA_VERSION=1003;
+const POSTGRES_RUNTIME_SCHEMA_VERSION=1006;
 const SCHEMA_LOCK="aws-miniflow-neiku-schema";
+const PAGE_PERMISSION_DEFAULT_SQL=`ARRAY[${ALL_PAGE_KEYS.map(key=>`'${key}'`).join(",")}]::TEXT[]`;
 
 export function ensureRuntimeSchema() {
   schemaInitialization??=initializeRuntimeSchema().catch(error=>{
@@ -26,9 +28,16 @@ async function initializeRuntimeSchema() {
         password_hash TEXT NOT NULL,
         password_salt TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'operator' CHECK (role IN ('admin','manager','operator')),
+        page_permissions TEXT[] NOT NULL DEFAULT ${PAGE_PERMISSION_DEFAULT_SQL},
         active BOOLEAN NOT NULL DEFAULT TRUE,
+        deleted_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS page_permissions TEXT[];
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+      UPDATE users SET page_permissions=${PAGE_PERMISSION_DEFAULT_SQL} WHERE page_permissions IS NULL;
+      ALTER TABLE users ALTER COLUMN page_permissions SET DEFAULT ${PAGE_PERMISSION_DEFAULT_SQL};
+      ALTER TABLE users ALTER COLUMN page_permissions SET NOT NULL;
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

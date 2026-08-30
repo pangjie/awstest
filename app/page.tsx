@@ -4,8 +4,8 @@ import LoginForm from "./login-form";
 import WarehouseApp from "./warehouse-app";
 
 export const metadata: Metadata = {
-  title: "内库 · 备货管理",
-  description: "整托盘备货、库位与仓内任务管理系统",
+  title: "内库",
+  description: "监测仓库内部货物流转、库位任务与人员工况的内部系统",
 };
 
 export const dynamic = "force-dynamic";

@@ -2,10 +2,11 @@ import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "../../../../../../db";
 import { locations, movements, pallets, skus } from "../../../../../../db/schema";
-import { getInternalUser } from "../../../../../../lib/internal-auth";
+import { authorizePageAccess } from "../../../../../../lib/internal-auth";
 
 export async function GET(_:Request,{params}:{params:Promise<{skuCode:string}>}) {
-  if(!await getInternalUser()) return NextResponse.json({error:{message:"请先登录"}},{status:401});
+  const access=await authorizePageAccess("warehouse-ledger");
+  if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const {skuCode}=await params;
   const rows=await getDb().select({
     id:movements.id,sourceId:sql<number>`COALESCE(${movements.sourceRecordId},${movements.id})`,palletId:movements.palletId,sku:skus.code,

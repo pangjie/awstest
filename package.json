@@ -14,6 +14,7 @@
     "start": "next start --hostname 0.0.0.0",
     "test": "node --test",
     "test:postgres-smoke": "node scripts/postgres-smoke.mjs",
+    "seed:timekeeping:test": "node --env-file=.env scripts/seed-timekeeping-test-data.mjs",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm test && npm run build"

@@ -5,21 +5,28 @@ import { fetchWithTimeout } from "@/lib/client-fetch";
 import { downloadWorkbook, downloadWorksheet, readFirstWorksheet, readNamedWorksheet } from "@/lib/excel-workbook";
 import { findLocationMatches } from "@/lib/location-search";
 import { LOCATION_IMPORT_HEADERS, normalizeLocationImportRow, validateLocationImportHeaders, validateUniqueLocationImportRows } from "@/lib/location-import";
+import { ALL_PAGE_KEYS, canAccessAnyPage, effectivePagePermissions, isTimekeepingPageKey, NAVIGATION_DEFINITIONS, PAGE_DEFINITIONS, WAREHOUSE_DATA_TABS, type PageKey, type PageLabel, type TimekeepingPageKey, type WarehouseDataTabKey } from "@/lib/page-permissions";
 import { normalizeReserveInventoryRow, RESERVE_INVENTORY_HEADERS, RESERVE_INVENTORY_SHEET, validateReserveInventoryHeaders, validateReserveInventoryRows } from "@/lib/reserve-inventory-excel";
 import { buildReserveSkuStatistics } from "@/lib/reserve-statistics";
 import { normalizeSkuCatalogRow, validateSkuCatalogHeaders } from "@/lib/sku-catalog";
 import { printWarehouseTaskSheet } from "@/lib/task-sheet-pdf";
 import { normalizeWarehouseLedgerRow, validateWarehouseLedgerHeaders, validateWarehouseLedgerRows, WAREHOUSE_LEDGER_HEADERS, WAREHOUSE_LEDGER_HISTORY_SHEET } from "@/lib/warehouse-ledger-excel";
 import { formatWarehouseDateTimeFixed, formatWarehouseTime, parseStoredTimestamp, previousWarehouseDateKey, toWarehouseDateTimeInput, warehouseDateKey, warehouseDateTimeInputToIso } from "@/lib/warehouse-time";
+import { DASHBOARD_RANGES, dashboardRangeLabel, type DashboardRangeId } from "@/lib/timekeeping/dashboard-range";
+import { addDays } from "@/lib/timekeeping/time";
+import BrandMark from "./brand-mark";
+import { currentDate } from "./timekeeping/format";
+import TimekeepingModule from "./timekeeping/timekeeping-module";
 
 type Role="admin"|"manager"|"operator";
-type User={id:number;username:string;email:string;name:string;role:Role;active:boolean};
+type SessionUser={id:number;username:string;name:string;role:Role;pagePermissions:PageKey[]};
+type User=SessionUser&{email:string;active:boolean};
 type Pallet={id:string;skuId:number;sku:string;remarks:string;locationId:number|null;location:string|null;status:"in_stock"|"in_task";inboundAt:string;ageDays:number};
 type Task={id:string;type:"store"|"pick"|"move";status:"pending"|"claimed"|"completed"|"returned"|"partial"|"cancelled";priority:"normal"|"urgent";dueAt:string|null;note:string|null;createdAt:string;completedAt?:string|null;palletId:string|null;sku:string|null;palletRemarks:string|null;plannedQuantity:number|null;actualQuantity:number|null;returnedQuantity:number;itemNote:string|null;itemOutcome:"completed"|"returned"|"partial"|null;itemResolvedAt:string|null;fromLocation:string|null;fromLocationType:"reserve"|"pick"|null;toLocation:string|null;toLocationType:"reserve"|"pick"|null};
 type Location={id:number;code:string;type:"reserve"|"pick";zone:string;capacity:number;status:"available"|"occupied";palletCount:number};
 type Movement={id:number;sourceId?:number|null;palletId:string;sku:string;remarks:string|null;taskId:string|null;operator:string|null;operatorUsername?:string|null;action:"inbound"|"pick"|"partial_pick"|"move"|"return"|"adjust";quantity:number;occurredAt:string;fromLocation:string|null;fromLocationType:"reserve"|"pick"|null;toLocation:string|null;toLocationType:"reserve"|"pick"|null};
 type Stats={pallets:number;occupied:number;reserveLocations:number;reserveCapacity:number;pendingTasks:number;completedToday:number};
-type AppData={pallets:Pallet[];tasks:Task[];locations:Location[];movements:Movement[];users:User[];invalidSkuCodes:string[];stats:Stats;revision:number};
+type AppData={currentUser:SessionUser;pallets:Pallet[];tasks:Task[];locations:Location[];movements:Movement[];users:User[];invalidSkuCodes:string[];stats:Stats;revision:number};
 type SkuCatalogRecord={id:number;sku:string;barcode:string;client:string;productName:string;declaredChineseName:string;sourceRow:number;importedAt:string};
 type SkuCatalogMeta={page:number;pageSize:number;total:number;uniqueCodes:number;activeRows:number;lastImportedAt:string|null};
 type Modal="store"|"pick"|"move"|"accounts"|"task"|null;
@@ -29,9 +36,6 @@ type LedgerTab="sku"|"location"|"history";
 type ApiRequest=(url:string,options?:RequestInit)=>Promise<unknown>;
 type TaskGroup={task:Task;rows:Task[]};
 
-const nav=["工作台","备库总表","备货统计","SKU管理","库位管理","仓库台账","待办任务"] as const;
-const narrowHiddenNav=new Set<(typeof nav)[number]>(["SKU管理","库位管理","仓库台账"]);
-const navIcons=["⌂","▦","∑","#","▤","↺","✓"];
 const typeLabel={store:"存备货",pick:"取备货",move:"迁移备货"};
 const actionLabel={inbound:"存备货",pick:"全部取出",partial_pick:"部分取出",move:"备货区迁移",return:"退回备货区",adjust:"手动调整"};
 const taskStatusLabel={pending:"待领取",claimed:"进行中",completed:"已完成",returned:"已退回",partial:"部分完成",cancelled:"已取消"};
@@ -148,8 +152,39 @@ function groupTasks(tasks:Task[]):TaskGroup[] {
   return groups;
 }
 
-export default function WarehouseApp({user}:{user:{name:string;role:Role}}) {
-  const [active,setActive]=useState<(typeof nav)[number]>("工作台");
+function authorizedPageLabel(user:SessionUser,current:PageLabel):PageLabel {
+  return NAVIGATION_DEFINITIONS.some(page=>page.label===current&&canAccessAnyPage(user,page.pagePermissions))
+    ?current:NAVIGATION_DEFINITIONS.find(page=>canAccessAnyPage(user,page.pagePermissions))?.label??"备货操作";
+}
+
+function authorizedWarehouseDataTab(user:SessionUser,current:WarehouseDataTabKey):WarehouseDataTabKey {
+  return WAREHOUSE_DATA_TABS.some(tab=>tab.key===current&&canAccessAnyPage(user,[tab.key]))
+    ?current:WAREHOUSE_DATA_TABS.find(tab=>canAccessAnyPage(user,[tab.key]))?.key??"tasks";
+}
+
+function SidebarDateTime() {
+  const [now,setNow]=useState(()=>new Date());
+  useEffect(()=>{
+    const interval=window.setInterval(()=>setNow(new Date()),1000);
+    return ()=>window.clearInterval(interval);
+  },[]);
+  const fullDate=formatWarehouseTime(now,{year:"numeric",month:"long",day:"numeric",weekday:"long"});
+  return <div className="sidebar-date" aria-label={`${fullDate}，${formatWarehouseTime(now,{hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"})}，美东时间`}>
+    <time className="sidebar-calendar" dateTime={dateKey(now.toISOString())}>
+      <span suppressHydrationWarning>{formatWarehouseTime(now,{year:"numeric"})} · {formatWarehouseTime(now,{weekday:"long"})}</span>
+      <strong suppressHydrationWarning>{formatWarehouseTime(now,{month:"long",day:"numeric"})}</strong>
+    </time>
+    <time className="sidebar-clock" dateTime={now.toISOString()}>
+      <strong suppressHydrationWarning>{formatWarehouseTime(now,{hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"})}</strong>
+      <span>美东时间</span>
+    </time>
+  </div>;
+}
+
+export default function WarehouseApp({user}:{user:SessionUser}) {
+  const [active,setActive]=useState<PageLabel>(()=>NAVIGATION_DEFINITIONS.find(page=>canAccessAnyPage(user,page.pagePermissions))?.label??"备货操作");
+  const [warehouseDataTab,setWarehouseDataTab]=useState<WarehouseDataTabKey>(()=>authorizedWarehouseDataTab(user,"tasks"));
+  const [warehouseDataVisited,setWarehouseDataVisited]=useState(()=>authorizedPageLabel(user,"备货操作")==="备货数据");
   const [data,setData]=useState<AppData|null>(null);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
@@ -160,24 +195,46 @@ export default function WarehouseApp({user}:{user:{name:string;role:Role}}) {
   const [editingRow,setEditingRow]=useState<ReserveRow|null>(null);
   const [toast,setToast]=useState("");
   const [externalSyncKey,setExternalSyncKey]=useState(0);
+  const [timeRecordBadge,setTimeRecordBadge]=useState("");
+  const [timeDashboardDate,setTimeDashboardDate]=useState(currentDate);
+  const [timeDashboardRange,setTimeDashboardRange]=useState<DashboardRangeId>("1d");
+  const [timeDashboardExportKey,setTimeDashboardExportKey]=useState(0);
+  const [timeDashboardImportOpen,setTimeDashboardImportOpen]=useState(false);
+  const [timekeepingTitleTarget,setTimekeepingTitleTarget]=useState<HTMLDivElement|null>(null);
   const [ledgerMovements,setLedgerMovements]=useState<Movement[]|null>(null);
   const [taskHistory,setTaskHistory]=useState<Task[]|null>(null);
   const [pickLocations,setPickLocations]=useState<Location[]|null>(null);
   const [ledgerLoading,setLedgerLoading]=useState(false);
-  const [taskHistoryLoading,setTaskHistoryLoading]=useState(false);
   const [pickLocationsLoading,setPickLocationsLoading]=useState(false);
-  const [deferredError,setDeferredError]=useState("");
+  const [ledgerError,setLedgerError]=useState("");
+  const [taskHistoryError,setTaskHistoryError]=useState("");
+  const [pickLocationsError,setPickLocationsError]=useState("");
   const revisionRef=useRef<number|null>(null);
   const syncInFlightRef=useRef(false);
   const loadedRevision=data?.revision;
+  const effectiveUser=data?.currentUser??user;
+  const visiblePages=useMemo(
+    ()=>NAVIGATION_DEFINITIONS.filter(page=>canAccessAnyPage(effectiveUser,page.pagePermissions)),
+    [effectiveUser],
+  );
+  const allowedPageKeys=useMemo(()=>new Set(effectivePagePermissions(effectiveUser.role,effectiveUser.pagePermissions)),[effectiveUser]);
+  const visibleWarehouseDataTabs=useMemo(
+    ()=>WAREHOUSE_DATA_TABS.filter(tab=>allowedPageKeys.has(tab.key)),
+    [allowedPageKeys],
+  );
+  const warehouseDataMounted=warehouseDataVisited||active==="备货数据";
+  const activeNavigation=visiblePages.find(page=>page.label===active);
+  const activeTimekeepingPage:TimekeepingPageKey|null=activeNavigation&&isTimekeepingPageKey(activeNavigation.key)?activeNavigation.key:null;
 
   const refresh=useCallback(async()=>{
     setLoading(true);setError("");
     try{
       const nextData=await fetchWarehouseData();
       setData(nextData);
+      setActive(current=>authorizedPageLabel(nextData.currentUser,current));
+      setWarehouseDataTab(current=>authorizedWarehouseDataTab(nextData.currentUser,current));
       revisionRef.current=nextData.revision;
-      setLedgerMovements(null);setTaskHistory(null);setPickLocations(null);setDeferredError("");
+      setLedgerMovements(null);setTaskHistory(null);setPickLocations(null);setLedgerError("");setTaskHistoryError("");setPickLocationsError("");
     }
     catch(loadError){setError(loadError instanceof Error?loadError.message:"数据加载失败")}
     finally{setLoading(false)}
@@ -185,7 +242,7 @@ export default function WarehouseApp({user}:{user:{name:string;role:Role}}) {
   useEffect(()=>{
     let cancelled=false;
     void fetchWarehouseData()
-      .then(nextData=>{if(!cancelled){revisionRef.current=nextData.revision;setData(nextData);setLoading(false)}})
+      .then(nextData=>{if(!cancelled){revisionRef.current=nextData.revision;setData(nextData);setActive(current=>authorizedPageLabel(nextData.currentUser,current));setWarehouseDataTab(current=>authorizedWarehouseDataTab(nextData.currentUser,current));setLoading(false)}})
       .catch(loadError=>{if(!cancelled){setError(loadError instanceof Error?loadError.message:"数据加载失败");setLoading(false)}});
     return ()=>{cancelled=true};
   },[]);
@@ -198,7 +255,7 @@ export default function WarehouseApp({user}:{user:{name:string;role:Role}}) {
       if(revision===revisionRef.current)return;
       const nextData=await fetchWarehouseData();
       revisionRef.current=nextData.revision;
-      setData(nextData);setLedgerMovements(null);setTaskHistory(null);setPickLocations(null);setDeferredError("");setExternalSyncKey(value=>value+1);setError("");
+      setData(nextData);setActive(current=>authorizedPageLabel(nextData.currentUser,current));setWarehouseDataTab(current=>authorizedWarehouseDataTab(nextData.currentUser,current));setLedgerMovements(null);setTaskHistory(null);setPickLocations(null);setLedgerError("");setTaskHistoryError("");setPickLocationsError("");setExternalSyncKey(value=>value+1);setError("");
       setToast("已同步其他设备的最新操作");
       window.setTimeout(()=>setToast(current=>current==="已同步其他设备的最新操作"?"":current),2600);
     } catch {
@@ -222,48 +279,49 @@ export default function WarehouseApp({user}:{user:{name:string;role:Role}}) {
     };
   },[syncIfChanged]);
   useEffect(()=>{
-    if(active!=="仓库台账"||loadedRevision===undefined)return;
+    if(!warehouseDataMounted||!allowedPageKeys.has("warehouse-ledger")||loadedRevision===undefined||ledgerMovements)return;
     let cancelled=false;
-    const loadingTimer=window.setTimeout(()=>{if(!cancelled){setLedgerLoading(true);setDeferredError("")}},0);
+    const loadingTimer=window.setTimeout(()=>{if(!cancelled){setLedgerLoading(true);setLedgerError("")}},0);
     void fetchAllMovementHistory()
       .then(rows=>{if(!cancelled)setLedgerMovements(rows)})
-      .catch(loadError=>{if(!cancelled)setDeferredError(loadError instanceof Error?loadError.message:"操作历史加载失败")})
+      .catch(loadError=>{if(!cancelled)setLedgerError(loadError instanceof Error?loadError.message:"操作历史加载失败")})
       .finally(()=>{window.clearTimeout(loadingTimer);if(!cancelled)setLedgerLoading(false)});
     return ()=>{cancelled=true;window.clearTimeout(loadingTimer)};
-  },[active,loadedRevision]);
+  },[warehouseDataMounted,allowedPageKeys,loadedRevision,ledgerMovements]);
   useEffect(()=>{
-    const needsPickLocations=modal==="pick"||active==="库位管理"||active==="仓库台账";
+    const needsPickLocations=modal==="pick"||(warehouseDataMounted&&(allowedPageKeys.has("location-management")||allowedPageKeys.has("warehouse-ledger")));
     if(!needsPickLocations||loadedRevision===undefined||pickLocations)return;
     let cancelled=false;
-    const loadingTimer=window.setTimeout(()=>{if(!cancelled){setPickLocationsLoading(true);setDeferredError("")}},0);
+    const loadingTimer=window.setTimeout(()=>{if(!cancelled){setPickLocationsLoading(true);setPickLocationsError("")}},0);
     void fetchPickLocations()
       .then(rows=>{if(!cancelled)setPickLocations(rows)})
-      .catch(loadError=>{if(!cancelled)setDeferredError(loadError instanceof Error?loadError.message:"拣货库位加载失败")})
+      .catch(loadError=>{if(!cancelled)setPickLocationsError(loadError instanceof Error?loadError.message:"拣货库位加载失败")})
       .finally(()=>{window.clearTimeout(loadingTimer);if(!cancelled)setPickLocationsLoading(false)});
     return ()=>{cancelled=true;window.clearTimeout(loadingTimer)};
-  },[active,modal,loadedRevision,pickLocations]);
+  },[warehouseDataMounted,allowedPageKeys,modal,loadedRevision,pickLocations]);
   useEffect(()=>{
-    if(active!=="待办任务"||loadedRevision===undefined)return;
+    if(!warehouseDataMounted||!allowedPageKeys.has("tasks")||loadedRevision===undefined||taskHistory)return;
     let cancelled=false;
-    const loadingTimer=window.setTimeout(()=>{if(!cancelled){setTaskHistoryLoading(true);setDeferredError("")}},0);
     void fetchAllTaskDetails()
-      .then(rows=>{if(!cancelled)setTaskHistory(rows)})
-      .catch(loadError=>{if(!cancelled)setDeferredError(loadError instanceof Error?loadError.message:"任务历史加载失败")})
-      .finally(()=>{window.clearTimeout(loadingTimer);if(!cancelled)setTaskHistoryLoading(false)});
-    return ()=>{cancelled=true;window.clearTimeout(loadingTimer)};
-  },[active,loadedRevision]);
-  useEffect(()=>{window.scrollTo({top:0,left:0,behavior:"auto"})},[active]);
+      .then(rows=>{if(!cancelled){setTaskHistory(rows);setTaskHistoryError("")}})
+      .catch(loadError=>{if(!cancelled)setTaskHistoryError(loadError instanceof Error?loadError.message:"任务历史加载失败")})
+    return ()=>{cancelled=true};
+  },[warehouseDataMounted,allowedPageKeys,loadedRevision,taskHistory]);
+  useEffect(()=>{window.scrollTo({top:0,left:0,behavior:"auto"})},[active,warehouseDataTab]);
   useEffect(()=>{
     const media=window.matchMedia("(max-width: 760px)");
     const leaveHiddenPage=()=>{
-      if(media.matches&&narrowHiddenNav.has(active)){
-        setActive("工作台");setSelected([]);setEditingRow(null);
+      const currentPage=visiblePages.find(page=>page.label===active);
+      if(media.matches&&currentPage?.narrowHidden){
+        const destination=visiblePages.find(page=>!page.narrowHidden)??visiblePages[0];
+        if(destination)setActive(destination.label);
+        setSelected([]);setEditingRow(null);
       }
     };
     leaveHiddenPage();
     media.addEventListener("change",leaveHiddenPage);
     return ()=>media.removeEventListener("change",leaveHiddenPage);
-  },[active]);
+  },[active,visiblePages]);
 
   const notify=(text:string)=>{setToast(text);window.setTimeout(()=>setToast(""),2600)};
   const openTask=(task:Task)=>{setCurrentTask(task);setModal("task")};
@@ -279,61 +337,64 @@ export default function WarehouseApp({user}:{user:{name:string;role:Role}}) {
   const invalidSkuCodes=useMemo(()=>new Set(data?.invalidSkuCodes??[]),[data]);
   const allLocations=useMemo(()=>[...(data?.locations??[]),...(pickLocations??[])],[data,pickLocations]);
 
-  if(loading&&!data) return <div className="app-loading"><div className="brand-mark">内</div><p>正在读取仓库数据…</p></div>;
+  if(loading&&!data) return <div className="app-loading" aria-label="正在读取仓库数据"><BrandMark className="brand-mark"/></div>;
   if(error&&!data) return <div className="app-loading error-state"><b>数据加载失败</b><p>{error}</p><button onClick={()=>refresh()}>重新加载</button></div>;
   const stats=data!.stats;
-  const today=new Date();
   const currentTaskRows=currentTask?(taskHistory??data!.tasks).filter(task=>task.id===currentTask.id):[];
   const latestCurrentTask=currentTaskRows[0]??currentTask;
 
   return <main className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">内</div><div><strong>内库</strong><span>WAREHOUSE</span></div></div>
-      <div className="sidebar-date" aria-label={`${formatWarehouseTime(today,{year:"numeric",month:"long",day:"numeric",weekday:"long"})}，美东时间`}>
-        <time dateTime={dateKey(today.toISOString())}><span>{formatWarehouseTime(today,{year:"numeric"})}</span><strong>{formatWarehouseTime(today,{month:"long",day:"numeric"})}</strong></time>
-        <b>{formatWarehouseTime(today,{weekday:"long"})}</b>
+      <div className="sidebar-head">
+        <div className="brand"><BrandMark className="brand-mark"/><div><strong>内库</strong><span>WAREHOUSE</span></div></div>
+        <SidebarDateTime/>
       </div>
-      <nav>{nav.map((n,i)=><button key={n} data-nav={n} aria-label={n} title={n} className={active===n?"nav-item active":"nav-item"} onClick={()=>{setActive(n);if(n==="仓库台账")setLedgerEntry({tab:"sku",query:""});setSelected([]);setEditingRow(null)}}>
-        <span className="nav-icon">{navIcons[i]}</span>{n}{n==="待办任务"&&stats.pendingTasks>0&&<b className="nav-badge">{stats.pendingTasks}</b>}
-      </button>)}</nav>
+      <nav>{visiblePages.map((page,index)=><Fragment key={page.key}>{(index===0||visiblePages[index-1].group!==page.group)&&<span className="nav-group-label">{page.group==="warehouse"?"备货体系":"工时体系"}</span>}<button data-nav={page.label} aria-label={page.label} title={page.label} className={active===page.label?"nav-item active":"nav-item"} onClick={()=>{setActive(page.label);setTimeDashboardImportOpen(false);if(page.label==="备货数据")setWarehouseDataVisited(true);setSelected([]);setEditingRow(null)}}>
+        <span className="nav-icon">{page.icon}</span>{page.label}{page.key==="warehouse-data"&&allowedPageKeys.has("tasks")&&stats.pendingTasks>0&&<b className="nav-badge">{stats.pendingTasks}</b>}
+      </button></Fragment>)}</nav>
       <div className="sidebar-bottom">
-        {user.role==="admin"&&<button className="nav-item" onClick={()=>setModal("accounts")}><span className="nav-icon">⚙</span>账户管理<span className="admin-tag">ADMIN</span></button>}
-        <div className="user"><div className="avatar">{user.name.slice(0,1)}</div><div><strong>{user.name}</strong><span>{roleName(user.role)}</span></div>
+        {effectiveUser.role==="admin"&&<button className="nav-item" onClick={()=>setModal("accounts")}><span className="nav-icon">⚙</span>账户管理<span className="admin-tag">ADMIN</span></button>}
+        <div className="user"><div className="avatar">{effectiveUser.name.slice(0,1)}</div><div><strong>{effectiveUser.name}</strong><span>{roleName(effectiveUser.role)}</span></div>
           <button aria-label="退出登录" title="退出登录" onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});location.reload()}}>↪</button></div>
       </div>
     </aside>
     <section className="workspace" data-page={active}>
-      {active!=="工作台"&&<header><div><h1>{active}</h1></div></header>}
+      {active!=="备货操作"&&<header><div className="workspace-title"><h1>{active}</h1></div><div className="workspace-title-tools" ref={setTimekeepingTitleTarget}>{activeTimekeepingPage==="time-dashboard"&&<div className="time-dashboard-title-actions"><button className="primary" type="button" onClick={()=>setTimeDashboardImportOpen(true)}>导入波次</button><button className="time-dashboard-current" type="button" onClick={()=>{setTimeDashboardDate(currentDate());setTimeDashboardRange("1d")}}>当前波次</button><label className="time-dashboard-date"><span>日期</span><div className="time-dashboard-date-nav"><button type="button" title="前一天" aria-label="前一天" onClick={()=>setTimeDashboardDate(date=>addDays(date,-1))}>‹</button><input aria-label="工作日期" type="date" value={timeDashboardDate} onChange={event=>{if(event.target.value)setTimeDashboardDate(event.target.value)}}/><button type="button" title="后一天" aria-label="后一天" onClick={()=>setTimeDashboardDate(date=>addDays(date,1))}>›</button></div></label><label className="time-dashboard-range"><span>时间段</span><select value={timeDashboardRange} onChange={event=>setTimeDashboardRange(event.target.value as DashboardRangeId)}>{DASHBOARD_RANGES.map(range=><option value={range.id} key={range.id}>{dashboardRangeLabel(timeDashboardDate,range.id)}</option>)}</select></label><button className="time-dashboard-export" type="button" onClick={()=>setTimeDashboardExportKey(key=>key+1)}>导出</button></div>}</div></header>}
       <div className="content">
-        {active==="工作台"&&<Dashboard stats={stats} tasks={pendingTaskGroups} onFlow={setModal} onTask={openTask} go={setActive} data={data!} invalidSkuCodes={invalidSkuCodes} openHistory={()=>{setLedgerEntry({tab:"history",query:""});setActive("仓库台账")}}/>}
-        {active==="备库总表"&&<ReserveTable pallets={data!.pallets} locations={data!.locations} selected={selected} setSelected={setSelected} onFlow={openFlow} notify={notify} done={async message=>{notify(message);await refresh()}} onEdit={setEditingRow} onLocation={code=>{setLedgerEntry({tab:"location",query:code});setActive("仓库台账")}} invalidSkuCodes={invalidSkuCodes}/>}
-        {active==="备货统计"&&<ReserveStatistics pallets={data!.pallets} locations={data!.locations} invalidSkuCodes={invalidSkuCodes}/>}
-        {active==="SKU管理"&&<SkuManagement externalRefreshKey={externalSyncKey} onImported={async message=>{notify(message);await refresh()}}/>}
-        {active==="库位管理"&&<LocationManagement locations={allLocations} api={requestApi} done={async message=>{notify(message);await refresh()}} loading={pickLocationsLoading} externalError={deferredError}/>}
-        {active==="仓库台账"&&<WarehouseLedger pallets={data!.pallets} locations={allLocations} movements={ledgerMovements??[]} initialTab={ledgerEntry.tab} initialQuery={ledgerEntry.query} invalidSkuCodes={invalidSkuCodes} loading={ledgerLoading||pickLocationsLoading} error={deferredError} api={requestApi} done={async message=>{notify(message);await refresh()}}/>}
-        {active==="待办任务"&&<TasksView tasks={allTaskGroups} onTask={openTask} invalidSkuCodes={invalidSkuCodes} loading={taskHistoryLoading} error={deferredError}/>}
+        {active==="备货操作"&&<Dashboard stats={stats} tasks={pendingTaskGroups} onFlow={setModal} onTask={openTask} openTasks={()=>{setWarehouseDataTab("tasks");setWarehouseDataVisited(true);setActive("备货数据")}} data={data!} invalidSkuCodes={invalidSkuCodes} canOpenTasks={allowedPageKeys.has("tasks")} canOpenLedger={allowedPageKeys.has("warehouse-ledger")} openHistory={()=>{setLedgerEntry({tab:"history",query:""});setWarehouseDataTab("warehouse-ledger");setWarehouseDataVisited(true);setActive("备货数据")}}/>}
+        {active==="备库总表"&&<ReserveTable pallets={data!.pallets} locations={data!.locations} selected={selected} setSelected={setSelected} onFlow={openFlow} notify={notify} done={async message=>{notify(message);await refresh()}} onEdit={setEditingRow} onLocation={allowedPageKeys.has("warehouse-ledger")?code=>{setLedgerEntry({tab:"location",query:code});setWarehouseDataTab("warehouse-ledger");setWarehouseDataVisited(true);setActive("备货数据")}:undefined} invalidSkuCodes={invalidSkuCodes}/>}
+        {warehouseDataMounted&&<div className="warehouse-data-page" hidden={active!=="备货数据"}>
+          <div className="warehouse-data-tabs" role="tablist" aria-label="备货数据">
+            {visibleWarehouseDataTabs.map(tab=><button key={tab.key} type="button" role="tab" aria-selected={warehouseDataTab===tab.key} className={warehouseDataTab===tab.key?"active":""} onClick={()=>{setWarehouseDataTab(tab.key);if(tab.key==="warehouse-ledger")setLedgerEntry({tab:"sku",query:""})}}><span aria-hidden="true">{tab.icon}</span>{tab.label}</button>)}
+          </div>
+          {allowedPageKeys.has("tasks")&&<div className="warehouse-data-panel" role="tabpanel" hidden={warehouseDataTab!=="tasks"}><TasksView tasks={allTaskGroups} onTask={openTask} invalidSkuCodes={invalidSkuCodes} error={taskHistoryError}/></div>}
+          {allowedPageKeys.has("sku-management")&&<div className="warehouse-data-panel" role="tabpanel" hidden={warehouseDataTab!=="sku-management"}><SkuManagement externalRefreshKey={externalSyncKey} onImported={async message=>{notify(message);await refresh()}}/></div>}
+          {allowedPageKeys.has("location-management")&&<div className="warehouse-data-panel" role="tabpanel" hidden={warehouseDataTab!=="location-management"}><LocationManagement locations={allLocations} api={requestApi} done={async message=>{notify(message);await refresh()}} loading={pickLocationsLoading} externalError={pickLocationsError}/></div>}
+          {allowedPageKeys.has("warehouse-ledger")&&<div className="warehouse-data-panel" role="tabpanel" hidden={warehouseDataTab!=="warehouse-ledger"}><WarehouseLedger key={`${ledgerEntry.tab}:${ledgerEntry.query}`} pallets={data!.pallets} locations={allLocations} movements={ledgerMovements??[]} initialTab={ledgerEntry.tab} initialQuery={ledgerEntry.query} invalidSkuCodes={invalidSkuCodes} loading={ledgerLoading||pickLocationsLoading} error={ledgerError||pickLocationsError} api={requestApi} done={async message=>{notify(message);await refresh()}}/></div>}
+        </div>}
+        {activeTimekeepingPage&&<TimekeepingModule page={activeTimekeepingPage} titleTarget={timekeepingTitleTarget} isAdmin={effectiveUser.role==="admin"} initialRecordBadge={timeRecordBadge} openRecords={allowedPageKeys.has("time-records")?badge=>{setTimeRecordBadge(badge);setActive("工作记录")}:undefined} dashboardDate={timeDashboardDate} dashboardRange={timeDashboardRange} dashboardExportKey={timeDashboardExportKey} dashboardImportOpen={timeDashboardImportOpen} closeDashboardImport={()=>setTimeDashboardImportOpen(false)}/>}
       </div>
     </section>
-    {modal&&["store","pick","move"].includes(modal)&&<TaskCreateModal type={modal as "store"|"pick"|"move"} pallets={data!.pallets} locations={modal==="pick"?allLocations:data!.locations} selected={selected} close={()=>setModal(null)} locationsLoading={modal==="pick"&&pickLocationsLoading} locationsError={modal==="pick"?deferredError:""}
+    {modal&&["store","pick","move"].includes(modal)&&<TaskCreateModal type={modal as "store"|"pick"|"move"} pallets={data!.pallets} locations={modal==="pick"?allLocations:data!.locations} selected={selected} close={()=>setModal(null)} locationsLoading={modal==="pick"&&pickLocationsLoading} locationsError={modal==="pick"?pickLocationsError:""}
       done={async(message)=>{setModal(null);setSelected([]);notify(message);await refresh()}} api={requestApi}/>}
     {modal==="task"&&latestCurrentTask&&<TaskModal task={latestCurrentTask} rows={currentTaskRows} close={()=>setModal(null)} api={requestApi} invalidSkuCodes={invalidSkuCodes}
       done={async message=>{setModal(null);notify(message);await refresh()}}
       updated={async message=>{notify(message);await refresh()}}/>}
-    {modal==="accounts"&&user.role==="admin"&&<AccountsModal users={data!.users} close={()=>setModal(null)} api={requestApi} done={async m=>{notify(m);await refresh()}}/>}
+    {modal==="accounts"&&effectiveUser.role==="admin"&&<AccountsModal users={data!.users} currentUserId={effectiveUser.id} close={()=>setModal(null)} api={requestApi} done={async m=>{notify(m);await refresh()}}/>}
     {editingRow&&<InventoryEditModal row={editingRow} locations={data!.locations} close={()=>setEditingRow(null)} api={requestApi} done={async message=>{setEditingRow(null);notify(message);await refresh()}}/>}
     {toast&&<div className="toast"><span>✓</span>{toast}</div>}
   </main>;
 }
 
-function Dashboard({stats,tasks,onFlow,onTask,go,data,openHistory,invalidSkuCodes}:{stats:Stats;tasks:TaskGroup[];onFlow:(m:Modal)=>void;onTask:(t:Task)=>void;go:(v:(typeof nav)[number])=>void;data:AppData;openHistory:()=>void;invalidSkuCodes:Set<string>}) {
+function Dashboard({stats,tasks,onFlow,onTask,openTasks,data,openHistory,invalidSkuCodes,canOpenTasks,canOpenLedger}:{stats:Stats;tasks:TaskGroup[];onFlow:(m:Modal)=>void;onTask:(t:Task)=>void;openTasks:()=>void;data:AppData;openHistory:()=>void;invalidSkuCodes:Set<string>;canOpenTasks:boolean;canOpenLedger:boolean}) {
   const occupancy=stats.reserveCapacity?Math.round(stats.occupied/stats.reserveCapacity*100):0;
   const now=new Date();
   const recentDateKeys=new Set([warehouseDateKey(now),previousWarehouseDateKey(now)]);
   const recentMovements=data.movements.filter(movement=>recentDateKeys.has(warehouseDateKey(movement.occurredAt)));
   return <><div className="quick-actions dashboard-quick-actions" aria-label="备货核心操作"><button className="core-action store-action" onClick={()=>onFlow("store")}><span className="qa green">↓</span><b>存备货</b><small>批量入库</small></button><button className="core-action pick-action" onClick={()=>onFlow("pick")}><span className="qa blue">↗</span><b>取备货</b><small>供给拣货位</small></button><button className="core-action move-action" onClick={()=>onFlow("move")}><span className="qa amber">↔</span><b>迁移备货</b><small>库内移位</small></button></div>
     <div className="dashboard-overview-grid"><div className="metric-grid dashboard-metric-grid"><Metric label="备货库存" value={String(stats.pallets)} unit="托" note="当前有效托盘" color="blue"/><Metric label="托盘位占用" value={String(occupancy)} unit="%" note={`${stats.occupied} / ${stats.reserveCapacity} 托盘位`} color="green"/><Metric label="今日已处理托盘" value={String(stats.completedToday)} unit="托" note="今日已确认作业结果" color="violet"/></div>
-      <section className="panel tasks-panel"><div className="panel-title"><div><h3>待办任务</h3><p>{tasks.length} 个待处理任务</p></div><button onClick={()=>go("待办任务")}>查看全部 →</button></div><div className="task-list">{tasks.length?tasks.map(group=><TaskRow key={group.task.id} task={group.task} rows={group.rows} onClick={()=>onTask(group.task)} invalidSkuCodes={invalidSkuCodes}/>):<Empty text="当前没有待办任务"/>}</div></section></div>
-    <section className="panel dashboard-history"><div className="panel-title"><div><h3>最近操作历史</h3><p>包含今日及前一天的全部操作记录，共 {recentMovements.length} 条</p></div><button onClick={openHistory}>查看全部 →</button></div><LedgerMovementTable rows={recentMovements} invalidSkuCodes={invalidSkuCodes}/></section>
+      <section className="panel tasks-panel"><div className="panel-title"><div><h3>待办任务</h3><p>{tasks.length} 个待处理任务</p></div>{canOpenTasks&&<button onClick={openTasks}>查看全部 →</button>}</div><div className="task-list">{tasks.length?tasks.map(group=><TaskRow key={group.task.id} task={group.task} rows={group.rows} onClick={()=>onTask(group.task)} invalidSkuCodes={invalidSkuCodes}/>):<Empty text="当前没有待办任务"/>}</div></section></div>
+    <section className="panel dashboard-history"><div className="panel-title"><div><h3>最近操作历史</h3><p>包含今日及前一天的全部操作记录，共 {recentMovements.length} 条</p></div>{canOpenLedger&&<button onClick={openHistory}>查看全部 →</button>}</div><LedgerMovementTable rows={recentMovements} invalidSkuCodes={invalidSkuCodes}/></section>
   </>;
 }
 
@@ -341,7 +402,7 @@ function Metric({label,value,unit,note,color}:{label:string;value:string;unit:st
   return <article className="metric"><div className={`metric-icon ${color}`}>{color==="blue"?"▦":color==="green"?"◎":"✓"}</div><div className="metric-copy"><p>{label}</p><h3><strong>{value}</strong><span>{unit}</span></h3><small>{note}</small></div></article>;
 }
 
-function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done,onLocation,onEdit,invalidSkuCodes}:{pallets:Pallet[];locations:Location[];selected:string[];setSelected:(v:string[])=>void;onFlow:(v:"pick"|"move",palletIds?:string[])=>void;notify:(v:string)=>void;done:(message:string)=>void|Promise<void>;onLocation:(v:string)=>void;onEdit:(row:ReserveRow)=>void;invalidSkuCodes:Set<string>}) {
+function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done,onLocation,onEdit,invalidSkuCodes}:{pallets:Pallet[];locations:Location[];selected:string[];setSelected:(v:string[])=>void;onFlow:(v:"pick"|"move",palletIds?:string[])=>void;notify:(v:string)=>void;done:(message:string)=>void|Promise<void>;onLocation?:((v:string)=>void);onEdit:(row:ReserveRow)=>void;invalidSkuCodes:Set<string>}) {
   const [skuQuery,setSkuQuery]=useState("");
   const [exactSkuQuery,setExactSkuQuery]=useState("");
   const [locationQuery,setLocationQuery]=useState("");
@@ -363,6 +424,7 @@ function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done
     return ()=>media.removeEventListener("change",resetNarrowFilters);
   },[setSelected]);
   const exactSkuCodes=useMemo(()=>parseExactSkuList(exactSkuQuery),[exactSkuQuery]);
+  const statistics=useMemo(()=>buildReserveSkuStatistics(pallets,locations),[pallets,locations]);
   const allRows=useMemo<ReserveRow[]>(()=>{
     const byLocation=new Map<string,Pallet[]>();
     for(const pallet of pallets) if(pallet.location) byLocation.set(pallet.location,[...(byLocation.get(pallet.location)??[]),pallet]);
@@ -412,6 +474,15 @@ function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done
       setImportError(error instanceof Error?error.message:"备库总表导出失败");
     }
   };
+  const exportStatistics=async()=>{
+    setImportError("");
+    try {
+      await downloadReserveStatisticsWorkbook(statistics);
+      notify(`已导出 ${statistics.length} 个 SKU 的备货统计`);
+    } catch(error) {
+      setImportError(error instanceof Error?error.message:"备货统计导出失败");
+    }
+  };
   const importReserveWorkbook=async(event:ChangeEvent<HTMLInputElement>)=>{
     const input=event.currentTarget,file=input.files?.[0];
     if(!file)return;
@@ -435,8 +506,7 @@ function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done
     }
   };
   const filterCount=[skuQuery,exactSkuQuery,locationQuery,inboundFrom,inboundTo,status==="all"?"":status].filter(Boolean).length;
-  return <section className="panel inventory-panel reserve-table"><div className="panel-title inventory-title"><div><h3>备库托盘与库位总表</h3><p>共 {allRows.length} 个托盘位，当前 {allRows.filter(row=>row.pallet).length} 托在库</p></div><div className="inventory-title-actions selection-toolbar"><label className={importing?"reserve-import-button busy":"reserve-import-button"}>⇧ {importing?"正在导入…":"导入备库总表"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing} onChange={importReserveWorkbook}/></label><b className="selection-count">已选 <strong>{selectedRows.length}</strong> 条记录</b><button className="selected-export" disabled={!selectedRows.length} onClick={exportSelected}>导出已选</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("pick",selectedPalletIds)}>批量取备货</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("move",selectedPalletIds)}>批量迁移</button><button className="cancel-selection" disabled={!selectedRows.length} onClick={()=>setSelected([])}>取消</button></div></div>
-    <div className="reserve-import-guide"><b>Excel 导入</b><span>兼容“导出已选”生成的备库总表；只新增或更新文件中的有货托盘，不会删除文件未列出的库存。空托盘位会自动忽略，作业中的托盘不能通过 Excel 修改。</span></div>
+  return <section className="panel inventory-panel reserve-table"><div className="panel-title inventory-title"><div><h3>备库托盘与库位总表</h3><p>共 {allRows.length} 个托盘位，当前 {allRows.filter(row=>row.pallet).length} 托在库</p></div><div className="inventory-title-actions selection-toolbar"><button className="reserve-statistics-export" disabled={!statistics.length} onClick={()=>void exportStatistics()}>⇩ 导出备货统计</button><label className={importing?"reserve-import-button busy":"reserve-import-button"}>⇧ {importing?"正在导入…":"导入备库总表"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing} onChange={importReserveWorkbook}/></label><b className="selection-count">已选 <strong>{selectedRows.length}</strong> 条记录</b><button className="selected-export" disabled={!selectedRows.length} onClick={exportSelected}>导出已选</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("pick",selectedPalletIds)}>批量取备货</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("move",selectedPalletIds)}>批量迁移</button><button className="cancel-selection" disabled={!selectedRows.length} onClick={()=>setSelected([])}>取消</button></div></div>
     {importError&&<div className="reserve-import-error" role="alert">! {importError}</div>}
     <div className="reserve-filter-panel">
       <div className="reserve-filter-bar">
@@ -464,7 +534,7 @@ function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done
         <tbody>{rows.map(row=>{
           const pallet=row.pallet,state=reserveRowStatus(row),selectionKey=reserveRowSelectionKey(row);
           return <tr key={`${row.location.id}-${row.slotIndex}-${pallet?.id??"empty"}`} className={!pallet?"empty-location-row":""}>
-            <td><div className="indexed-location"><input type="checkbox" aria-label={pallet?`选择 ${pallet.id}`:`选择空托盘位 ${row.location.code}`} checked={selected.includes(selectionKey)} onChange={e=>setSelected(e.target.checked?[...selected,selectionKey]:selected.filter(id=>id!==selectionKey))}/><button className="location-link" onClick={()=>onLocation(row.location.code)}>{row.location.code}</button>{row.location.capacity>1&&<span className="slot-badge">{row.slotIndex}/{row.location.capacity}</span>}</div></td>
+            <td><div className="indexed-location"><input type="checkbox" aria-label={pallet?`选择 ${pallet.id}`:`选择空托盘位 ${row.location.code}`} checked={selected.includes(selectionKey)} onChange={e=>setSelected(e.target.checked?[...selected,selectionKey]:selected.filter(id=>id!==selectionKey))}/>{onLocation?<button className="location-link" onClick={()=>onLocation(row.location.code)}>{row.location.code}</button>:<span className="location-code">{row.location.code}</span>}{row.location.capacity>1&&<span className="slot-badge">{row.slotIndex}/{row.location.capacity}</span>}</div></td>
             <td>{pallet?<b className={invalidSkuCodes.has(pallet.sku)?"sku-code invalid-sku":"sku-code"} title={invalidSkuCodes.has(pallet.sku)?"未在 SKU 主数据中找到":undefined}>{pallet.sku}</b>:<span className="empty-cell">空托盘位</span>}</td>
             <td>{pallet?.remarks?<span className="pallet-remarks">{pallet.remarks}</span>:<span className="empty-cell">{pallet?"无备注":"—"}</span>}</td>
             <td>{pallet?formatTime(pallet.inboundAt):<span className="empty-cell">—</span>}</td>
@@ -476,43 +546,6 @@ function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done
         })}</tbody>
       </table>
       {!rows.length&&<Empty text="没有符合条件的备货库位或托盘"/>}
-    </div>
-  </section>;
-}
-
-function ReserveStatistics({pallets,locations,invalidSkuCodes}:{pallets:Pallet[];locations:Location[];invalidSkuCodes:Set<string>}) {
-  const [query,setQuery]=useState("");
-  const statistics=useMemo(()=>buildReserveSkuStatistics(pallets,locations),[pallets,locations]);
-  const normalizedQuery=query.trim().toLowerCase();
-  const rows=useMemo(
-    ()=>statistics.filter(row=>!normalizedQuery||row.sku.toLowerCase().includes(normalizedQuery)),
-    [statistics,normalizedQuery],
-  );
-  const totalPallets=statistics.reduce((total,row)=>total+row.palletCount,0);
-
-  return <section className="panel reserve-statistics">
-    <div className="reserve-statistics-head">
-      <div><span>RESERVE INVENTORY</span><h2>备货统计</h2><p>按 SKU 汇总当前备货区整托库存，默认按托数从高到低排列。</p></div>
-      <div className="reserve-statistics-overview">
-        <p><span>在库 SKU</span><b>{statistics.length.toLocaleString()}</b><small>种</small></p>
-        <p><span>备货托盘</span><b>{totalPallets.toLocaleString()}</b><small>托</small></p>
-      </div>
-    </div>
-    <div className="reserve-statistics-toolbar">
-      <label><span>⌕</span><input aria-label="搜索备货统计 SKU" value={query} onChange={event=>setQuery(event.target.value)} placeholder="输入 SKU 模糊搜索"/></label>
-      <span>找到 <b>{rows.length.toLocaleString()}</b> 个 SKU</span>
-      <button className="statistics-export-button" disabled={!rows.length} onClick={()=>downloadReserveStatisticsWorkbook(rows)}>⇩ 导出备货统计表</button>
-    </div>
-    <div className="table-scroll">
-      <table className="reserve-statistics-table">
-        <thead><tr><th>排名</th><th>SKU</th><th>托盘数 ▼</th></tr></thead>
-        <tbody>{rows.map((row,index)=><tr key={row.sku}>
-          <td><span className="statistics-rank">{index+1}</span></td>
-          <td><b className={invalidSkuCodes.has(row.sku)?"statistics-sku invalid-sku":"statistics-sku"} title={invalidSkuCodes.has(row.sku)?"未在 SKU 主数据中找到":undefined}>{row.sku}</b></td>
-          <td><strong className="statistics-pallet-count">{row.palletCount.toLocaleString()}<small>托</small></strong></td>
-        </tr>)}</tbody>
-      </table>
-      {!rows.length&&<Empty text={normalizedQuery?"没有符合条件的在库 SKU":"备货区当前没有托盘"}/>}
     </div>
   </section>;
 }
@@ -611,7 +644,6 @@ function SkuManagement({onImported,externalRefreshKey}:{onImported:(message:stri
       </div>
       <div className="sku-manual-form-actions"><button type="button" onClick={()=>{setAdding(false);setError("")}}>取消</button><button type="submit" disabled={saving}>{saving?"正在添加…":"添加 SKU"}</button></div>
     </form>}
-    <div className="sku-import-guide"><b>导入格式</b><span>使用 WMS_PRODUCT 导出的 .xlsx 文件；只提取 SKU、产品条码、客户、产品名称、申报中文名，文件中的其他列会被忽略。</span><b>更新规则</b><span>每次导入会新增系统中尚不存在的 SKU，并用新文件中的信息覆盖已有同名 SKU；文件中未出现的旧 SKU 会保留。系统按 SKU 编码忽略大小写匹配，同一文件内重复的 SKU 以最后一条记录为准。</span></div>
     <div className="sku-catalog-stats">
       <p><span>有效产品记录</span><b>{meta.activeRows.toLocaleString()}</b></p>
       <p><span>唯一 SKU</span><b>{meta.uniqueCodes.toLocaleString()}</b></p>
@@ -620,7 +652,7 @@ function SkuManagement({onImported,externalRefreshKey}:{onImported:(message:stri
     </div>
     <div className="sku-catalog-toolbar">
       <label><span>⌕</span><input aria-label="搜索 SKU 主数据" value={q} onChange={event=>{setQ(event.target.value);setPage(1)}} placeholder="搜索 SKU、产品条码、客户、产品名称或申报中文名"/></label>
-      <span>{loading?"正在读取…":`找到 ${meta.total.toLocaleString()} 条记录`}</span>
+      <span>找到 {meta.total.toLocaleString()} 条记录</span>
     </div>
     {error&&<div className="sku-catalog-error">! {error}</div>}
     <div className="table-scroll"><table className="sku-catalog-table">
@@ -666,9 +698,7 @@ function LocationManagement({locations,api,done,loading,externalError}:{location
     }
   };
   return <section className="panel location-management"><div className="management-head"><div><h3>库位管理</h3><p>备货库位与拣货库位独立管理；即使名称相同，也属于两个不同库位。</p></div><div className="management-head-actions"><button className="location-export-button" disabled={loading||!locations.length} onClick={()=>void downloadLocationImportWorkbook(locations)}>⇩ 导出全部库位</button><a className="location-template-button" href="/neiku-location-import-template.xlsx" download="内库库位导入模板.xlsx">⇩ 下载 Excel 模板</a><label className={importing?"location-import-button busy":"location-import-button"}>⇧ {importing?"正在导入…":"批量导入库位"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing} onChange={importLocations}/></label><button className="primary" onClick={()=>{setAdding(value=>!value);setDraft(null);setError("")}}>＋ 新增{locationTypeLabel(viewType)}</button></div></div>
-    {loading&&<div className="deferred-load-state"><span className="deferred-spinner"/>正在按需读取拣货库位…</div>}
     {externalError&&<div className="management-error">! {externalError}</div>}
-    <div className="location-import-guide"><b>批量导入规则</b><span>模板只使用“库位、类型、容量”三列。类型填写“备货库位”或“拣货库位”；同名不同类型会分别保存。已有的同类型库位只更新容量，不会删除现有库位。</span></div>
     <div className="location-type-tabs" role="tablist" aria-label="库位类型"><button role="tab" aria-selected={viewType==="reserve"} className={viewType==="reserve"?"active":""} onClick={()=>switchType("reserve")}><span>备货库位</span><b>{counts.reserve}</b></button><button role="tab" aria-selected={viewType==="pick"} className={viewType==="pick"?"active":""} onClick={()=>switchType("pick")}><span>拣货库位</span><b>{counts.pick}</b></button></div>
     {adding&&<form className="location-create-form typed-location-create" onSubmit={create}><div className={`location-create-type ${viewType}`}><span>当前新增类型</span><b>{locationTypeLabel(viewType)}</b><small>同名的另一类型库位不会被覆盖</small></div><label>库位编码<input required value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder={viewType==="reserve"?"例如 A-A-001":"例如 A-1-001"}/></label><label>区域<input value={zone} onChange={e=>setZone(e.target.value.toUpperCase())} placeholder="默认取编码首段"/></label><label>托盘容量<input required type="number" min="1" max="999" value={capacity} onChange={e=>setCapacity(e.target.value)}/></label><div><button type="button" onClick={()=>setAdding(false)}>取消</button><button className="primary" disabled={busy}>{busy?"正在新增…":`确认新增${locationTypeLabel(viewType)}`}</button></div></form>}
     <div className="management-toolbar"><label>⌕<input value={q} onChange={e=>{setQ(e.target.value);setPage(1)}} placeholder={`搜索${locationTypeLabel(viewType)}或区域`}/></label><span>找到 {rows.length} 个 · 第 {page}/{totalPages} 页</span></div>
@@ -779,10 +809,8 @@ function WarehouseLedger({pallets,locations,movements,initialTab,initialQuery,in
       <div><span>WAREHOUSE LEDGER</span><h2>仓库台账</h2><p>完整记录 SKU、库位与每一次托盘移动</p></div>
       <div className="ledger-overview-right"><div className="ledger-transfer-actions"><label className={importing?"busy":""}>⇧ {importing?"正在导入…":"导入仓库台账"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing||loading} onChange={importLedger}/></label><button disabled={loading||!movements.length} onClick={()=>void exportLedger()}>⇩ 导出全部台账</button></div><div className="ledger-overview-stats"><p><b>{new Set(movements.map(m=>m.sku)).size}</b><span>历史 SKU</span></p><p><b>{touchedLocations}</b><span>有记录库位</span></p><p><b>{movements.length}</b><span>操作记录</span></p></div></div>
     </div>
-    {loading&&<div className="deferred-load-state"><span className="deferred-spinner"/>正在按需读取完整仓库台账…</div>}
     {error&&<div className="management-error">! {error}</div>}
     {transferError&&<div className="management-error">! {transferError}</div>}
-    <div className="ledger-import-guide"><b>通用 Excel</b><span>“导出全部台账”生成的文件可直接再次导入；系统只追加缺失的操作历史并自动跳过重复记录，不会改变托盘当前库位或库存状态。保留记录 ID 有助于精确识别重复记录；系统可补建仅存在于已出库历史中的托盘和 SKU，文件引用的库位必须已存在。</span></div>
     <div className="ledger-tabs" role="tablist" aria-label="仓库台账分类">
       <button role="tab" aria-selected={tab==="sku"} className={tab==="sku"?"active":""} onClick={()=>changeTab("sku")}>SKU 台账</button>
       <button role="tab" aria-selected={tab==="location"} className={tab==="location"?"active":""} onClick={()=>changeTab("location")}>库位台账</button>
@@ -833,7 +861,7 @@ function LedgerMovementTable({rows,location,invalidSkuCodes}:{rows:Movement[];lo
   })}</tbody></table></div>;
 }
 
-function TasksView({tasks,onTask,invalidSkuCodes,loading,error}:{tasks:TaskGroup[];onTask:(t:Task)=>void;invalidSkuCodes:Set<string>;loading:boolean;error:string}) {
+function TasksView({tasks,onTask,invalidSkuCodes,error}:{tasks:TaskGroup[];onTask:(t:Task)=>void;invalidSkuCodes:Set<string>;error:string}) {
   const [tab,setTab]=useState("open");
   const lines=tasks.flatMap(group=>group.rows.map((row,index)=>({task:row,index,total:group.rows.length})));
   const pendingGroups=tasks.filter(group=>group.rows.some(row=>taskItemResult(row).key==="pending"));
@@ -842,7 +870,6 @@ function TasksView({tasks,onTask,invalidSkuCodes,loading,error}:{tasks:TaskGroup
       <button className={tab==="open"?"on":""} onClick={()=>setTab("open")}>待处理 <span>{pendingGroups.length}</span></button>
       <button className={tab==="all"?"on":""} onClick={()=>setTab("all")}>全部 <span>{lines.length}</span></button>
     </div>
-    {loading&&<div className="deferred-load-state"><span className="deferred-spinner"/>正在按需读取全部任务历史…</div>}
     {error&&<div className="management-error">! {error}</div>}
     {tab==="open"?<div className="task-list">{pendingGroups.length?pendingGroups.map(group=><TaskRow key={group.task.id} task={group.task} rows={group.rows} onClick={()=>onTask(group.task)} invalidSkuCodes={invalidSkuCodes}/>):<Empty text="当前没有待处理任务"/>}</div>:<div className="task-lines-scroll"><div className="task-lines-table">
       <div className="task-line-head"><span>任务 / 子任务</span><span>SKU</span><span>备货库位 / 起始库位</span><span>主库位 / 目标库位</span><span>托盘参考</span><span>作业结果</span><span>操作</span></div>
@@ -965,7 +992,6 @@ function TaskCreateModal({type,pallets,locations,selected,close,done,api,locatio
   };
   return <ModalFrame title={typeLabel[type]} kicker={type==="store"?"DIRECT PUTAWAY":type==="pick"?"BATCH PICK TASK":"BATCH MOVE TASK"} close={close} wide>
     <div className={type==="store"?"flow-summary store-flow-summary":type==="pick"?"flow-summary pick-flow-summary":"flow-summary move-flow-summary"}>
-      {locationsLoading&&<div className="deferred-load-state"><span className="deferred-spinner"/>正在读取主库位，请稍候…</div>}
       {locationsError&&<div className="login-error">! {locationsError}</div>}
       {type==="store"?<><p className="store-guidance">可先添加多行再统一填写。同一库位可按托盘容量分配多行；每行的 SKU 和备货库位为必填，备注说明选填。</p><div className="store-lines"><div className="store-grid-head"><span>SKU <b>*</b></span><span>备注说明</span><span>备货库位 <b>*</b></span><span/></div>{storeRows.map((row,index)=>{const otherAssignments=storeRows.filter(item=>item.key!==row.key).map(item=>item.target);return <div className="store-line" key={row.key}><label><span>SKU *</span><input required aria-label={`SKU ${index+1}`} placeholder="必填" value={row.sku} onChange={e=>updateStore(row.key,{sku:e.target.value.toUpperCase()})}/></label><label><span>备注说明</span><input aria-label={`备注说明 ${index+1}`} placeholder="选填" value={row.remarks} onChange={e=>updateStore(row.key,{remarks:e.target.value})}/></label><label><span>备货库位 *</span><select required aria-label={`备货库位 ${index+1}`} value={row.target} onChange={e=>updateStore(row.key,{target:e.target.value})}><option value="">选择库位</option>{targets.filter(location=>location.code===row.target||targetHasRoom(location.code,otherAssignments)).map(location=><option key={location.id} value={location.code}>{location.code}（余 {availableLocationSlots(location)-otherAssignments.filter(code=>code===location.code).length}）</option>)}</select></label>{storeRows.length>1?<button className="remove-store-line" aria-label={`移除第 ${index+1} 行`} onClick={()=>setStoreRows(rows=>rows.filter(item=>item.key!==row.key))}>移除</button>:<span className="remove-store-placeholder"/>}</div>})}<button className="add-line" disabled={storeAtCapacity} onClick={addStoreRow}>＋ 添加一行</button></div>{storeAtCapacity&&<p className="store-capacity-hint">备货库位已满，无法继续添加。</p>}{storeRows.length>1&&storeMissingSku&&<p className="store-validation-hint">请填写每一行的 SKU 后再存入备货区。</p>}</>
       :type==="pick"?<>
@@ -1046,11 +1072,63 @@ function TaskModal({task,rows,close,api,done,updated,invalidSkuCodes}:{task:Task
   </div></ModalFrame>;
 }
 
-function AccountsModal({users,close,api,done}:{users:User[];close:()=>void;api:ApiRequest;done:(m:string)=>void}) {
-  const [adding,setAdding]=useState(false),[name,setName]=useState(""),[username,setUsername]=useState(""),[password,setPassword]=useState(""),[role,setRole]=useState<Role>("operator"),[error,setError]=useState("");
-  const create=async(e:FormEvent)=>{e.preventDefault();setError("");try{await api("/api/v1/users",{method:"POST",body:JSON.stringify({name,username,password,role})});setAdding(false);setName("");setUsername("");setPassword("");done("内部账号已创建")}catch(err){setError(err instanceof Error?err.message:"创建失败")}};
-  const toggle=async(u:User)=>{try{await api(`/api/v1/users/${u.id}`,{method:"PATCH",body:JSON.stringify({active:!u.active})});done(u.active?"账号已停用":"账号已启用")}catch(err){setError(err instanceof Error?err.message:"操作失败")}};
-  return <ModalFrame title="账户管理" kicker="ADMIN ONLY" close={close}><div className="account-list"><p>管理员可创建内部账号、分配角色并停用账号。</p>{users.map(u=><div key={u.id} className={!u.active?"disabled-user":""}><span>{u.name[0]}</span><div><b>{u.name}</b><small>{u.username} · {u.email}</small></div><em>{roleName(u.role)}</em><button onClick={()=>toggle(u)}>{u.active?"停用":"启用"}</button></div>)}{!adding?<button className="add-account" onClick={()=>setAdding(true)}>＋ 新增内部账号</button>:<form className="account-form" onSubmit={create}><label>姓名<input required value={name} onChange={e=>setName(e.target.value)}/></label><label>登录账号<input required value={username} onChange={e=>setUsername(e.target.value.toLowerCase())}/></label><label>初始密码<input required type="password" autoComplete="new-password" minLength={12} value={password} onChange={e=>setPassword(e.target.value)}/></label><label>角色<select value={role} onChange={e=>setRole(e.target.value as Role)}><option value="operator">操作员</option><option value="manager">仓库主管</option><option value="admin">管理员</option></select></label>{error&&<div className="login-error">! {error}</div>}<div><button type="button" onClick={()=>setAdding(false)}>取消</button><button className="primary">创建账号</button></div></form>}</div></ModalFrame>;
+function AccountsModal({users,currentUserId,close,api,done}:{users:User[];currentUserId:number;close:()=>void;api:ApiRequest;done:(m:string)=>void|Promise<void>}) {
+  const [adding,setAdding]=useState(false);
+  const [username,setUsername]=useState("");
+  const [password,setPassword]=useState("");
+  const [newPermissions,setNewPermissions]=useState<PageKey[]>([]);
+  const [editing,setEditing]=useState<User|null>(null);
+  const [editingPermissions,setEditingPermissions]=useState<PageKey[]>([]);
+  const [deleting,setDeleting]=useState<User|null>(null);
+  const [deleteBusy,setDeleteBusy]=useState(false);
+  const [error,setError]=useState("");
+  const create=async(e:FormEvent)=>{
+    e.preventDefault();setError("");
+    try {
+      await api("/api/v1/users",{method:"POST",body:JSON.stringify({username,password,pagePermissions:newPermissions})});
+      setAdding(false);setUsername("");setPassword("");setNewPermissions([]);
+      await done("内部账号已创建");
+    } catch(err) {setError(err instanceof Error?err.message:"创建失败")}
+  };
+  const toggle=async(u:User)=>{
+    setError("");
+    try {await api(`/api/v1/users/${u.id}`,{method:"PATCH",body:JSON.stringify({active:!u.active})});await done(u.active?"账号已停用":"账号已启用")}
+    catch(err){setError(err instanceof Error?err.message:"操作失败")}
+  };
+  const openPermissions=(u:User)=>{setError("");setEditing(u);setEditingPermissions(effectivePagePermissions(u.role,u.pagePermissions))};
+  const savePermissions=async()=>{
+    if(!editing||editing.role==="admin"){setEditing(null);return}
+    setError("");
+    try {
+      await api(`/api/v1/users/${editing.id}`,{method:"PATCH",body:JSON.stringify({pagePermissions:editingPermissions})});
+      setEditing(null);await done("账号权限已更新");
+    } catch(err){setError(err instanceof Error?err.message:"权限保存失败")}
+  };
+  const remove=async()=>{
+    if(!deleting||deleting.id===currentUserId)return;
+    setError("");setDeleteBusy(true);
+    try {
+      await api(`/api/v1/users/${deleting.id}`,{method:"DELETE"});
+      setDeleting(null);await done("账号已删除");
+    } catch(err){setError(err instanceof Error?err.message:"删除失败")}
+    finally{setDeleteBusy(false)}
+  };
+  if(editing) {
+    const admin=editing.role==="admin";
+    return <ModalFrame title={`权限设置 · ${editing.name}`} kicker="PAGE ACCESS" close={()=>setEditing(null)} wide><div className="permission-editor"><p>{admin?"系统管理员始终拥有全部页面权限，无法取消。":"仅勾选的页面会显示在对应主导航或“备货数据”页签中。"}</p><PermissionChecklist permissions={admin?ALL_PAGE_KEYS:editingPermissions} setPermissions={setEditingPermissions} disabled={admin}/>{error&&<div className="login-error">! {error}</div>}</div><div className="modal-actions"><button onClick={()=>setEditing(null)}>{admin?"关闭":"取消"}</button>{!admin&&<button className="primary" disabled={!editingPermissions.length} onClick={savePermissions}>保存权限</button>}</div></ModalFrame>;
+  }
+  if(deleting) {
+    return <ModalFrame title={`删除账号 · ${deleting.name}`} kicker="CONFIRM DELETE" close={()=>{if(!deleteBusy){setDeleting(null);setError("")}}}><div className="account-delete-confirm"><strong>确定删除账号“{deleting.username}”吗？</strong><p>该账号将立即无法登录，所有已登录会话也会失效。仓库操作历史会保留原操作人信息。</p>{error&&<div className="login-error">! {error}</div>}</div><div className="modal-actions"><button disabled={deleteBusy} onClick={()=>{setDeleting(null);setError("")}}>取消</button><button className="account-delete-confirm-button" disabled={deleteBusy} onClick={remove}>{deleteBusy?"正在删除…":"确认删除"}</button></div></ModalFrame>;
+  }
+  return <ModalFrame title="账户管理" kicker="ADMIN ONLY" close={close} wide><div className="account-list"><p>管理员默认拥有全部权限。普通账号只会看到被授权的子页面；新增页面默认不授权，已删除页面的旧权限自动失效。</p>{users.map(u=>{
+    const permissions=effectivePagePermissions(u.role,u.pagePermissions);
+    return <div key={u.id} className={`account-row${!u.active?" disabled-user":""}`}><span>{u.name[0]}</span><div className="account-identity"><b>{u.name}</b><small>{u.username} · {u.email}</small></div>{u.role==="admin"&&<em>管理员</em>}<div className="account-actions"><button className="account-permission-button" onClick={()=>openPermissions(u)}><b>{u.role==="admin"?"全部权限":`已授权 ${permissions.length}/${PAGE_DEFINITIONS.length}`}</b><small>点击管理</small></button><button className="account-state-button" onClick={()=>toggle(u)}>{u.active?"停用":"启用"}</button>{u.id!==currentUserId&&<button className="account-delete-button" onClick={()=>{setError("");setDeleting(u)}}>删除</button>}</div></div>;
+  })}{!adding?<button className="add-account" onClick={()=>{setAdding(true);setError("")}}>＋ 新增内部账号</button>:<form className="account-form account-create-form" onSubmit={create}><label>账号名称<input required value={username} onChange={e=>setUsername(e.target.value.toLowerCase())}/></label><label>初始密码<input required type="password" autoComplete="new-password" minLength={12} value={password} onChange={e=>setPassword(e.target.value)}/></label><fieldset className="permission-scope"><legend><span>权限范围</span><button type="button" onClick={()=>setNewPermissions(newPermissions.length===ALL_PAGE_KEYS.length?[]:[...ALL_PAGE_KEYS])}>{newPermissions.length===ALL_PAGE_KEYS.length?"取消全选":"全选"}</button></legend><PermissionChecklist permissions={newPermissions} setPermissions={setNewPermissions}/></fieldset>{error&&<div className="login-error">! {error}</div>}<div><button type="button" onClick={()=>{setAdding(false);setError("")}}>取消</button><button className="primary" disabled={!newPermissions.length}>创建账号</button></div></form>}</div></ModalFrame>;
+}
+
+function PermissionChecklist({permissions,setPermissions,disabled=false}:{permissions:readonly PageKey[];setPermissions:(permissions:PageKey[])=>void;disabled?:boolean}) {
+  const selected=new Set(permissions);
+  return <div className="permission-list" role="group" aria-label="子页面权限">{PAGE_DEFINITIONS.map(page=><label key={page.key}><span className="permission-page"><i>{page.icon}</i><span><b>{page.label}</b>{page.section==="warehouse-data"&&<small>备货数据页签</small>}{page.section==="timekeeping"&&<small>工时体系页面</small>}</span></span><input type="checkbox" checked={selected.has(page.key)} disabled={disabled} onChange={event=>setPermissions(event.target.checked?ALL_PAGE_KEYS.filter(key=>selected.has(key)||key===page.key):permissions.filter(key=>key!==page.key))}/></label>)}</div>;
 }
 
 function ModalFrame({title,kicker,close,children,wide=false}:{title:string;kicker:string;close:()=>void;children:React.ReactNode;wide?:boolean}) {
