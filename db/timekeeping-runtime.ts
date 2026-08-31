@@ -2,7 +2,7 @@ import { getPool } from "./index";
 import { generateEmployeeId } from "../lib/timekeeping/employee-id";
 
 let initialization:Promise<void>|null=null;
-const TIMEKEEPING_SCHEMA_VERSION=3;
+const TIMEKEEPING_SCHEMA_VERSION=4;
 const SCHEMA_LOCK="neiku-timekeeping-schema";
 
 export function ensureTimekeepingSchema(){
@@ -40,6 +40,7 @@ async function initialize(){
         piece_count INTEGER NOT NULL DEFAULT 0 CHECK (piece_count>=0),
         sort_order INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed')),
+        interrupted_at TIMESTAMPTZ,
         completed_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
@@ -120,6 +121,7 @@ async function initialize(){
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       ALTER TABLE time_employees ADD COLUMN IF NOT EXISTS employee_code TEXT;
+      ALTER TABLE time_work_items ADD COLUMN IF NOT EXISTS interrupted_at TIMESTAMPTZ;
       CREATE UNIQUE INDEX IF NOT EXISTS time_employees_code_unique ON time_employees(employee_code);
       CREATE UNIQUE INDEX IF NOT EXISTS time_shifts_employee_open_unique ON time_shifts(employee_id) WHERE status='open';
       CREATE INDEX IF NOT EXISTS time_shifts_employee_date_idx ON time_shifts(employee_id,work_date);

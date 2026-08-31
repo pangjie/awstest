@@ -53,6 +53,11 @@ const createdTimeEmployee=await request("/api/v1/timekeeping/employees",{
 });
 const timeBadge=createdTimeEmployee.payload.employees[0].badgeCode;
 assert.match(timeBadge,/^[34679CFHKMNRVWXY]{8}$/);
+const helperEmployeeName=`E2E协同-${suffix}`;
+const createdHelperEmployee=await request("/api/v1/timekeeping/employees",{
+  method:"POST",expected:201,body:{name:helperEmployeeName,type:"JJC"},
+});
+const helperBadge=createdHelperEmployee.payload.employees[0].badgeCode;
 const timeWaveNo=`W-E2E-${suffix}`;
 await request("/api/v1/timekeeping/waves",{
   method:"POST",expected:201,body:{items:[{waveNo:timeWaveNo,channelName:"E2E渠道",channelType:"多件",skuCount:3,orderCount:5,pieceCount:8}]},
@@ -72,18 +77,36 @@ const waveWork=await request("/api/v1/timekeeping/scan",{method:"POST",body:{cod
 assert.equal(waveWork.payload.snapshot.currentProject.assignmentRole,"lead");
 const duplicateWave=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:timeWaveNo,employeeId:identified.payload.employeeId,requestId:scanId("wave"),terminalId:"e2e"}});
 assert.equal(duplicateWave.payload.duplicate,true);
+await request("/api/v1/timekeeping/waves",{method:"PATCH",body:{id:timeWave.id,action:"interrupt"}});
+const interruptedItems=await request("/api/v1/timekeeping/waves");
+assert.ok(interruptedItems.payload.currentWaves.find(item=>item.id===timeWave.id)?.interruptedAt);
+const readyEmployees=await request("/api/v1/timekeeping/employees");
+assert.equal(readyEmployees.payload.employees.find(item=>item.id===identified.payload.employeeId)?.attendanceState,"ready");
+const leaderSwitched=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"JOB-TODO",employeeId:identified.payload.employeeId,requestId:scanId("leader-switch"),terminalId:"e2e"}});
+assert.equal(leaderSwitched.payload.event,"PROJECT_START");
+const helperIdentified=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:helperBadge,requestId:scanId("helper-identify"),terminalId:"e2e-helper"}});
+const helperClockedIn=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-CLOCKIN",employeeId:helperIdentified.payload.employeeId,requestId:scanId("helper-in"),terminalId:"e2e-helper"}});
+assert.equal(helperClockedIn.payload.event,"CLOCK_IN");
+const helperWave=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:timeWaveNo,employeeId:helperIdentified.payload.employeeId,requestId:scanId("helper-wave"),terminalId:"e2e-helper"}});
+assert.equal(helperWave.payload.snapshot.currentProject.assignmentRole,"helper");
+const resumedItems=await request("/api/v1/timekeeping/waves");
+assert.equal(resumedItems.payload.currentWaves.find(item=>item.id===timeWave.id)?.interruptedAt,null);
+await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-OUT",employeeId:helperIdentified.payload.employeeId,requestId:scanId("helper-out"),terminalId:"e2e-helper"}});
+const leaderResumed=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:timeWaveNo,employeeId:identified.payload.employeeId,requestId:scanId("leader-resume"),terminalId:"e2e"}});
+assert.equal(leaderResumed.payload.snapshot.currentProject.assignmentRole,"lead");
 const completedWave=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-WAVE-COMPLETE",employeeId:identified.payload.employeeId,completeProjectId:timeWave.id,requestId:scanId("complete"),terminalId:"e2e"}});
 assert.equal(completedWave.payload.event,"WAVE_COMPLETE");
 const clockedOut=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-OUT",employeeId:identified.payload.employeeId,requestId:scanId("out"),terminalId:"e2e"}});
 assert.equal(clockedOut.payload.event,"CLOCK_OUT");
 const timeDashboard=await request("/api/v1/timekeeping/dashboard");
-assert.ok(timeDashboard.payload.attendance.some(item=>item.badgeCode===timeBadge));
+assert.ok(timeDashboard.payload.attendance.some(item=>item.name===timeEmployeeName));
 const timeReport=await request(`/api/v1/timekeeping/records?badge=${timeBadge}`);
 assert.equal(timeReport.payload.snapshot.employee.badgeCode,timeBadge);
 assert.ok(timeReport.payload.projects.length>=2);
 const timeRevision=await request("/api/v1/timekeeping/revision");
 assert.ok(timeRevision.payload.revision>0);
 await request("/api/v1/timekeeping/employees",{method:"PATCH",body:{id:identified.payload.employeeId,active:false}});
+await request("/api/v1/timekeeping/employees",{method:"PATCH",body:{id:helperIdentified.payload.employeeId,active:false}});
 
 const importedLocations=await request("/api/v1/locations",{
   method:"POST",

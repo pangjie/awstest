@@ -2,20 +2,110 @@
   flex: 0 0 auto;
 }
 
+@media (min-width: 761px) {
+  .sidebar {
+    width: 180px;
+    padding-inline: 8px;
+  }
+
+  .workspace {
+    width: calc(100% - 180px);
+    margin-left: 180px;
+  }
+
+  .sidebar .nav-item {
+    height: 40px;
+    gap: 8px;
+    margin-block: 2px;
+    padding-inline: 8px;
+    font-size: 14px;
+  }
+
+  .sidebar .nav-icon {
+    width: 17px;
+    font-size: 18px;
+  }
+
+  .sidebar .nav-group-label {
+    margin: 10px 8px 4px;
+    font-size: 10px;
+  }
+
+  .sidebar-bottom {
+    padding-top: 8px;
+    padding-bottom: 10px;
+  }
+
+  .sidebar-bottom > .nav-item {
+    height: 34px;
+    font-size: 13px;
+  }
+
+  .sidebar-bottom > .nav-item .nav-icon {
+    font-size: 16px;
+  }
+
+  .sidebar-bottom .admin-tag {
+    padding: 1px 3px;
+    font-size: 9px;
+  }
+
+  .sidebar-bottom .user {
+    gap: 7px;
+    margin-top: 8px;
+    padding: 9px 4px 1px;
+  }
+
+  .sidebar-bottom .avatar {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    font-size: 13px;
+  }
+
+  .sidebar-bottom .user > div:nth-child(2) {
+    min-width: 0;
+  }
+
+  .sidebar-bottom .user strong,
+  .sidebar-bottom .user span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sidebar-bottom .user strong {
+    font-size: 14px;
+    line-height: 1.15;
+  }
+
+  .sidebar-bottom .user span {
+    margin-top: 1px;
+    font-size: 11px;
+  }
+
+  .sidebar-bottom .user button {
+    min-width: 22px;
+    margin-left: 0;
+    padding: 0;
+    font-size: 16px;
+  }
+}
+
 .sidebar-head .brand {
-  height: 76px;
-  gap: 11px;
-  padding: 0 10px;
+  height: 68px;
+  gap: 9px;
+  padding: 0 8px;
 }
 
 .sidebar-head .brand-mark {
-  width: 40px;
-  height: 40px;
-  flex-basis: 40px;
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
 }
 
 .sidebar-head .brand strong {
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
 }
 
@@ -29,12 +119,11 @@
 
 .sidebar-date {
   display: grid;
-  grid-template-columns: minmax(0,1fr) 88px;
-  align-items: center;
-  gap: 10px;
-  min-height: 64px;
+  grid-template-columns: minmax(0,1fr);
+  gap: 8px;
+  min-height: 88px;
   margin: 0;
-  padding: 10px 10px 13px;
+  padding: 7px 8px 11px;
   color: #7f8da3;
 }
 
@@ -59,39 +148,44 @@
 }
 
 .sidebar-calendar strong {
-  margin-top: 6px;
+  margin-top: 5px;
   color: #f1f5fb;
   font-size: 17px;
   line-height: 1;
 }
 
 .sidebar-clock {
-  width: 88px;
-  text-align: right;
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-top: 7px;
+  border-top: 1px solid #ffffff0d;
+  text-align: left;
 }
 
 .sidebar-clock strong {
-  width: 100%;
+  width: auto;
   color: #7fa8ff;
   font-family: var(--font-geist-mono),ui-monospace,SFMono-Regular,Menlo,monospace;
-  font-size: 18px;
+  font-size: 17px;
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: "tnum" 1,"lnum" 1;
   font-weight: 750;
   font-kerning: none;
   line-height: 1;
   letter-spacing: .25px;
-  text-align: right;
+  text-align: left;
 }
 
 .sidebar-clock span {
-  margin-top: 6px;
+  margin-top: 0;
   text-align: right;
 }
 
 .sidebar-head + nav {
   border-top-color: #ffffff16;
-  padding-top: 14px;
+  padding-top: 11px;
 }
 
 .reserve-filter-panel {

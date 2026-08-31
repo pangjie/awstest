@@ -59,17 +59,21 @@ export async function PATCH(request:NextRequest){
   await ensureTimekeepingSchema();
   const body=await request.json().catch(()=>({})) as {id?:unknown;action?:unknown};
   const id=Number(body.id);
-  if(!Number.isInteger(id)||id<1||body.action!=="complete")return error("波次操作无效",400);
+  const action=body.action==="complete"||body.action==="interrupt"?body.action:null;
+  if(!Number.isInteger(id)||id<1||!action)return error("波次操作无效",400);
   const result=await getDb().transaction(async tx=>{
     await lockTimekeeping(tx);
     const wave=(await tx.select().from(timeWorkItems).where(and(eq(timeWorkItems.id,id),eq(timeWorkItems.workType,"wave"))).limit(1))[0];
     if(!wave)return {error:"找不到这个波次",status:404 as const};
-    if(wave.status==="completed")return {message:"这个波次已经完结"};
+    if(wave.status==="completed")return action==="complete"?{message:"这个波次已经完结"}:{error:"已完结波次不能中断",status:409 as const};
+    if(action==="interrupt"&&wave.interruptedAt)return {message:"这个波次已经中断"};
+    const activeSessions=await tx.select({id:timeWorkSessions.id}).from(timeWorkSessions).where(and(eq(timeWorkSessions.workItemId,id),isNull(timeWorkSessions.endedAt))).limit(1);
+    if(action==="interrupt"&&!activeSessions.length)return {error:"只有正在进行的波次可以中断",status:409 as const};
     const now=new Date().toISOString();
     await tx.update(timeWorkSessions).set({endedAt:now}).where(and(eq(timeWorkSessions.workItemId,id),isNull(timeWorkSessions.endedAt)));
-    await tx.update(timeWorkItems).set({status:"completed",completedAt:now}).where(eq(timeWorkItems.id,id));
+    await tx.update(timeWorkItems).set(action==="complete"?{status:"completed",completedAt:now,interruptedAt:null}:{interruptedAt:now}).where(eq(timeWorkItems.id,id));
     await recordTimeRevision(tx);
-    return {message:`波次 ${wave.waveNo} 已完结并移入历史记录`};
+    return {message:action==="complete"?`波次 ${wave.waveNo} 已完结并移入历史记录`:`波次 ${wave.waveNo} 已中断，参与人员已转为在岗待命`};
   });
   if(typeof result.error==="string")return error(result.error,result.status??400);
   return NextResponse.json({ok:true,message:result.message});

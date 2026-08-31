@@ -9,7 +9,7 @@ type EmployeeRow={id:number;badge_code:string;name:string;organization_type:"OZM
 type ShiftRow={id:number;employee_id:number;work_date:string;clock_in:Timestamp;clock_out:Timestamp|null;status:"open"|"closed"};
 type SessionRow={id:number;shift_id:number;employee_id:number;work_item_id:number;started_at:Timestamp;ended_at:Timestamp|null;shift_clock_in:Timestamp;shift_clock_out:Timestamp|null;work_date:string};
 type SessionEditRow={id:number;request_id:string;session_id:number;work_date:string;session_field:"started_at"|"ended_at";old_timestamp:Timestamp;new_timestamp:Timestamp;note:string;editor_username:string;edited_at:Timestamp;work_code:string;work_name:string};
-type WorkItemRow={id:number;barcode:string;code:string;name:string;client:string;work_type:"wave"|"standard";wave_no:string|null;channel_name:string;channel_type:string;sku_count:number;order_count:number;piece_count:number;sort_order:number;status:"active"|"completed";completed_at:Timestamp|null;created_at:Timestamp};
+type WorkItemRow={id:number;barcode:string;code:string;name:string;client:string;work_type:"wave"|"standard";wave_no:string|null;channel_name:string;channel_type:string;sku_count:number;order_count:number;piece_count:number;sort_order:number;status:"active"|"completed";interrupted_at:Timestamp|null;completed_at:Timestamp|null;created_at:Timestamp};
 type ParticipantRow=SessionRow&{badge_code:string;employee_name:string;assignment_role:"lead"|"helper"|null};
 type ScanEventRow={id:string;event_type:string;outcome:string;response_payload:unknown;occurred_at:Timestamp;operator_username:string;employee_id:number|null;employee_name:string|null};
 
@@ -64,7 +64,7 @@ export async function readWorkItems({includeHistory=true}:{includeHistory?:boole
   const pool=getPool();
   const [itemsResult,sessionsResult]=await Promise.all([
     pool.query<WorkItemRow>(`SELECT id,barcode,code,name,client,work_type,wave_no,channel_name,channel_type,
-      sku_count,order_count,piece_count,sort_order,status,completed_at,created_at FROM time_work_items
+      sku_count,order_count,piece_count,sort_order,status,interrupted_at,completed_at,created_at FROM time_work_items
       WHERE ${includeHistory?"work_type='wave' OR status='active'":"status='active'"}
       ORDER BY CASE WHEN work_type='standard' THEN 0 ELSE 1 END,sort_order,id`),
     pool.query<ParticipantRow>(`SELECT ws.id,ws.shift_id,ws.employee_id,ws.work_item_id,ws.started_at,ws.ended_at,
@@ -97,7 +97,7 @@ export async function readWorkItems({includeHistory=true}:{includeHistory?:boole
     }).sort((a,b)=>Number(b.role==="lead")-Number(a.role==="lead")||a.firstStartedAt.localeCompare(b.firstStartedAt));
     return {
       id:item.id,barcode:item.barcode,code:item.code,waveNo:item.wave_no,name:item.name,client:item.client,channelName:item.channel_name,channelType:item.channel_type,
-      workType:item.work_type,skuCount:Number(item.sku_count),orderCount:Number(item.order_count),pieceCount:Number(item.piece_count),sortOrder:Number(item.sort_order),status:item.status,
+      workType:item.work_type,skuCount:Number(item.sku_count),orderCount:Number(item.order_count),pieceCount:Number(item.piece_count),sortOrder:Number(item.sort_order),status:item.status,interruptedAt:toIsoOrNull(item.interrupted_at),
       createdAt:toIso(item.created_at),completedAt:toIsoOrNull(item.completed_at),startedAt:toIsoOrNull(sessions[0]?.started_at),lastEndedAt:toIsoOrNull(sessions.at(-1)?.ended_at),
       totalMs:sessions.reduce((sum,row)=>sum+sessionDuration(row,now),0),employeeCount:sessionsByEmployee.size,activeCount:participants.filter(row=>row.active).length,participants,
     };
@@ -135,7 +135,7 @@ export async function readDashboard(requestedDate?:string|null,requestedRange?:s
     pool.query<ShiftRow>("SELECT id,employee_id,work_date,clock_in,clock_out,status FROM time_shifts WHERE work_date BETWEEN $1 AND $2 ORDER BY clock_in",[range.startDate,range.endDate]),
     pool.query<ParticipantRow&WorkItemRow>(`SELECT ws.id,ws.shift_id,ws.employee_id,ws.work_item_id,ws.started_at,ws.ended_at,
         s.clock_in AS shift_clock_in,s.clock_out AS shift_clock_out,s.work_date,COALESCE(e.employee_code,e.badge_code) AS badge_code,e.name AS employee_name,
-        wi.barcode,wi.code,wi.name,wi.client,wi.work_type,wi.wave_no,wi.channel_name,wi.channel_type,wi.sku_count,wi.order_count,wi.piece_count,wi.sort_order,wi.status,wi.completed_at,wi.created_at,
+        wi.barcode,wi.code,wi.name,wi.client,wi.work_type,wi.wave_no,wi.channel_name,wi.channel_type,wi.sku_count,wi.order_count,wi.piece_count,wi.sort_order,wi.status,wi.interrupted_at,wi.completed_at,wi.created_at,
         wa.role AS assignment_role
       FROM time_work_sessions ws JOIN time_shifts s ON s.id=ws.shift_id JOIN time_employees e ON e.id=ws.employee_id
       JOIN time_work_items wi ON wi.id=ws.work_item_id LEFT JOIN time_wave_assignments wa ON wa.work_item_id=wi.id AND wa.employee_id=e.id
@@ -185,7 +185,6 @@ export async function readDashboard(requestedDate?:string|null,requestedRange?:s
     filterUniverse:{channels:Array.from(new Set(projectTotals.map(item=>item.channelName).filter(Boolean)))},attendance,
     taskTotals:{totalMs,waveMs,scanMs,otherMs:Math.max(0,totalMs-waveMs-scanMs),activeCount:rangeSessions.filter(isActive).length,waveActiveCount:waveSessions.filter(isActive).length,scanActiveCount:rangeSessions.filter(row=>(row.barcode==="JOB-SCAN"||row.barcode==="JOB-SINGLE-SCAN")&&isActive(row)).length,otherActiveCount:rangeSessions.filter(row=>row.work_type!=="wave"&&row.barcode!=="JOB-SCAN"&&row.barcode!=="JOB-SINGLE-SCAN"&&isActive(row)).length},
     dailyTasks:fixedItems,projectTotals,
-    anomalies:attendance.filter(row=>row.clockIn&&!row.clockOut&&durationMs(row.clockIn,now)>14*60*60*1000).map(row=>({level:"warning" as const,employee:row.name,message:"连续开工超过 14 小时，请核对下班记录"})),
   };
 }
 

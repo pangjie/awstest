@@ -2,13 +2,14 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { fetchWithTimeout } from "@/lib/client-fetch";
 import { timeApi } from "./api";
 import { formatClock, formatDuration, stateLabel } from "./format";
 import type { EmployeeRecord, EmployeesResponse } from "./types";
 
 type SortKey="badgeCode"|"name"|"type"|"todayOffDutyMs"|"todayMs"|"attendanceState";
 
-export default function EmployeesPage({titleTarget,openRecords}:{titleTarget:HTMLDivElement|null;openRecords?:((badge:string)=>void)}){
+export default function EmployeesPage({titleTarget,isAdmin,openRecords,openScan}:{titleTarget:HTMLDivElement|null;isAdmin:boolean;openRecords?:((badge:string)=>void);openScan?:((badge:string)=>void)}){
   const [data,setData]=useState<EmployeesResponse|null>(null);
   const [query,setQuery]=useState("");
   const [status,setStatus]=useState("active");
@@ -17,6 +18,7 @@ export default function EmployeesPage({titleTarget,openRecords}:{titleTarget:HTM
   const [adding,setAdding]=useState(false);
   const [editing,setEditing]=useState<EmployeeRecord|null>(null);
   const [pendingAction,setPendingAction]=useState<string|null>(null);
+  const [exporting,setExporting]=useState(false);
   const [error,setError]=useState("");
   const load=useCallback(async()=>{try{setData(await timeApi<EmployeesResponse>("/api/v1/timekeeping/employees"));setError("")}catch(loadError){setError(loadError instanceof Error?loadError.message:"员工数据读取失败")}},[]);
   useEffect(()=>{let cancelled=false;void timeApi<EmployeesResponse>("/api/v1/timekeeping/employees").then(next=>{if(!cancelled){setData(next);setError("")}}).catch(loadError=>{if(!cancelled)setError(loadError instanceof Error?loadError.message:"员工数据读取失败")});return()=>{cancelled=true}},[]);
@@ -35,14 +37,29 @@ export default function EmployeesPage({titleTarget,openRecords}:{titleTarget:HTM
     catch(saveError){setError(saveError instanceof Error?saveError.message:`${action==="sign_in"?"Sign In":"Sign Out"} 失败`)}
     finally{setPendingAction(null)}
   };
+  const exportScanAssets=async()=>{
+    if(exporting)return;
+    setExporting(true);setError("");
+    try{
+      const response=await fetchWithTimeout("/api/v1/timekeeping/employees/export",{cache:"no-store"},120_000);
+      if(response.status===401){window.location.reload();return}
+      if(!response.ok){const body=await response.json().catch(()=>({})) as {error?:string};throw new Error(body.error??"员工扫描素材导出失败")}
+      const disposition=response.headers.get("content-disposition")??"";
+      const encodedName=disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      const blob=await response.blob(),url=URL.createObjectURL(blob),anchor=document.createElement("a");
+      anchor.href=url;anchor.download=encodedName?decodeURIComponent(encodedName):"内库员工扫描素材.zip";anchor.click();
+      window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(exportError){setError(exportError instanceof Error?exportError.message:"员工扫描素材导出失败")}
+    finally{setExporting(false)}
+  };
   if(!data&&!error)return <div className="time-page time-page-placeholder" aria-busy="true"/>;
   return <div className="time-page time-employees-page">
-    {titleTarget&&createPortal(<div className="time-employee-titlebar"><div className="time-employee-title-filters"><label><span>搜索</span><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="员工 ID、姓名或组织" aria-label="搜索员工"/></label><label><span>状态</span><select value={status} onChange={event=>setStatus(event.target.value)} aria-label="员工状态"><option value="active">在职</option><option value="inactive">已停用</option><option value="all">全部</option></select></label><p>共 {rows.length} 名员工</p></div><button className="primary" onClick={()=>setAdding(true)}>新增员工</button></div>,titleTarget)}
+    {titleTarget&&createPortal(<div className="time-employee-titlebar"><div className="time-employee-title-filters"><label><span>搜索</span><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="员工 ID、姓名或组织" aria-label="搜索员工"/></label><label><span>状态</span><select value={status} onChange={event=>setStatus(event.target.value)} aria-label="员工状态"><option value="active">在职</option><option value="inactive">已停用</option><option value="all">全部</option></select></label><p>共 {rows.length} 名员工</p></div><div className="time-employee-title-actions">{isAdmin&&<button className="time-secondary" disabled={exporting||!data?.employees.length} onClick={()=>void exportScanAssets()}>{exporting?"正在生成…":"导出扫描素材"}</button>}<button className="primary" onClick={()=>setAdding(true)}>新增员工</button></div></div>,titleTarget)}
     {error&&<div className="time-error">{error}<button onClick={()=>void load()}>重试</button></div>}
       <section className="time-card"><div className="time-table-wrap"><table className="time-table time-data-table time-employee-table"><thead><tr><th className="time-employee-actions-col">操作</th><SortHead label="员工 ID" field="badgeCode" current={sort} descending={descending} onClick={changeSort}/><SortHead label="姓名" field="name" current={sort} descending={descending} onClick={changeSort}/><SortHead label="组织" field="type" current={sort} descending={descending} onClick={changeSort}/><SortHead label="工况" field="attendanceState" current={sort} descending={descending} onClick={changeSort}/><th>最早 Sign In</th><th>最晚 Sign Out</th><SortHead label="当日不在岗" field="todayOffDutyMs" current={sort} descending={descending} onClick={changeSort}/><th>当前任务</th><SortHead label="今日在岗" field="todayMs" current={sort} descending={descending} onClick={changeSort}/></tr></thead><tbody>{rows.map(employee=>{
         const onDuty=employee.attendanceState==="working"||employee.attendanceState==="ready";
         const rowPending=pendingAction?.startsWith(`${employee.id}:`)??false;
-        return <tr key={employee.id} className={!employee.active?"disabled-row":""}><td><div className="time-row-actions time-employee-row-actions"><button className="sign-in" disabled={rowPending||!employee.active||onDuty} onClick={()=>void attendanceAction(employee,"sign_in")}>Sign In</button><button className="sign-out" disabled={rowPending||!onDuty} onClick={()=>void attendanceAction(employee,"sign_out")}>Sign Out</button><button disabled={rowPending} onClick={()=>setEditing(employee)}>编辑</button><button className={employee.active?"danger":""} disabled={rowPending} onClick={()=>void toggle(employee)}>{employee.active?"停用":"启用"}</button></div></td><td><code>{employee.badgeCode}</code></td><td>{openRecords?<button className="time-employee-record-link" onClick={()=>openRecords(employee.badgeCode)}><b>{employee.name}</b></button>:<b>{employee.name}</b>}</td><td>{employee.type}</td><td><span className={`time-state ${employee.attendanceState}`}>{stateLabel(employee.attendanceState)}</span></td><td className="time-number">{employee.todayFirstSignIn?formatClock(employee.todayFirstSignIn):"—"}</td><td className="time-number">{employee.todayLastSignOut?formatClock(employee.todayLastSignOut):"—"}</td><td className="time-number">{formatDuration(employee.todayOffDutyMs)}</td><td className="time-truncate" title={employee.currentProject?.name}>{employee.currentProject?.name??"—"}</td><td className="time-number">{formatDuration(employee.todayMs)}</td></tr>
+        return <tr key={employee.id} className={!employee.active?"disabled-row":""}><td><div className="time-row-actions time-employee-row-actions"><button className="sign-in" disabled={rowPending||!employee.active||onDuty} onClick={()=>void attendanceAction(employee,"sign_in")}>Sign In</button><button className="sign-out" disabled={rowPending||!onDuty} onClick={()=>void attendanceAction(employee,"sign_out")}>Sign Out</button><button disabled={rowPending} onClick={()=>setEditing(employee)}>编辑</button><button className={employee.active?"danger":""} disabled={rowPending} onClick={()=>void toggle(employee)}>{employee.active?"停用":"启用"}</button></div></td><td>{openScan?<button type="button" className="time-employee-scan-link" onClick={()=>openScan(employee.badgeCode)} title={`在扫描台打开 ${employee.name}`}><code>{employee.badgeCode}</code></button>:<code>{employee.badgeCode}</code>}</td><td>{openRecords?<button type="button" className="time-employee-record-link" onClick={()=>openRecords(employee.badgeCode)}><b>{employee.name}</b></button>:<b>{employee.name}</b>}</td><td>{employee.type}</td><td><span className={`time-state ${employee.attendanceState}`}>{stateLabel(employee.attendanceState)}</span></td><td className="time-number">{employee.todayFirstSignIn?formatClock(employee.todayFirstSignIn):"—"}</td><td className="time-number">{employee.todayLastSignOut?formatClock(employee.todayLastSignOut):"—"}</td><td className="time-number">{formatDuration(employee.todayOffDutyMs)}</td><td className="time-truncate" title={employee.currentProject?.name}>{employee.currentProject?.name??"—"}</td><td className="time-number">{formatDuration(employee.todayMs)}</td></tr>
       })}</tbody></table></div>{rows.length===0&&<p className="time-empty">当前筛选下暂无员工</p>}</section>
     {adding&&<AddEmployeesModal close={()=>setAdding(false)} saved={async()=>{setAdding(false);await load()}}/>}
     {editing&&<EditEmployeeModal employee={editing} close={()=>setEditing(null)} saved={async()=>{setEditing(null);await load()}}/>}

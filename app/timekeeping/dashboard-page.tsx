@@ -12,20 +12,20 @@ import { formatClockWithSeconds, formatDurationWithSeconds, stateLabel } from ".
 import type { DashboardResponse, WorkItem, WorkParticipant } from "./types";
 import { channelLabel, WaveChannelTag, WaveTypeTag, waveTypeInfo } from "./wave-display";
 
-type WaveState="completed"|"working"|"unstarted"|"paused";
-type FilterKey="channel"|"type"|"state";
+type WaveState="completed"|"interrupted"|"working"|"unstarted"|"paused";
+type FilterKey="channel"|"type"|"state"|"employee";
 type FilterOption={value:string;label:string;count:number};
 type WaveFilters=Record<FilterKey,string[]>;
 const REVISION_POLL_MS=10_000;
 const STATE_OPTIONS:FilterOption[]=[
   {value:"unstarted",label:"未开始",count:0},{value:"working",label:"进行中",count:0},
-  {value:"paused",label:"暂停",count:0},{value:"completed",label:"已完成",count:0},
+  {value:"interrupted",label:"中断",count:0},{value:"paused",label:"暂停",count:0},{value:"completed",label:"已完成",count:0},
 ];
 
 export default function DashboardPage({date,range,exportKey,importOpen,closeImport}:{date:string;range:DashboardRangeId;exportKey:number;importOpen:boolean;closeImport:()=>void}){
   const [data,setData]=useState<DashboardResponse|null>(null);
   const [now,setNow]=useState(()=>Date.now());
-  const [filters,setFilters]=useState<WaveFilters>({channel:[],type:[],state:[]});
+  const [filters,setFilters]=useState<WaveFilters>({channel:[],type:[],state:[],employee:[]});
   const [openFilter,setOpenFilter]=useState<FilterKey|null>(null);
   const [pendingWaveId,setPendingWaveId]=useState<number|null>(null);
   const [error,setError]=useState("");
@@ -130,12 +130,15 @@ export default function DashboardPage({date,range,exportKey,importOpen,closeImpo
     channel:countOptions(projects.map(item=>channelLabel(item.channelName))),
     type:countOptions(projects.map(item=>waveTypeInfo(item.channelType).label)),
     state:STATE_OPTIONS.map(option=>({...option,count:projects.filter(item=>waveState(item)===option.value).length})),
+    employee:participantOptions(projects),
   }),[projects]);
+  const employeeFilterActive=filterOptions.employee.some(option=>filters.employee.includes(option.value));
   const visibleProjects=useMemo(()=>projects.filter(item=>(
     !filters.channel.includes(channelLabel(item.channelName))
     &&!filters.type.includes(waveTypeInfo(item.channelType).label)
     &&!filters.state.includes(waveState(item))
-  )),[filters,projects]);
+    &&(!employeeFilterActive||item.participants.some(person=>!filters.employee.includes(String(person.employeeId))))
+  )),[employeeFilterActive,filters,projects]);
 
   const exportDashboard=useCallback(async()=>{
     if(!data)return;
@@ -166,14 +169,14 @@ export default function DashboardPage({date,range,exportKey,importOpen,closeImpo
     void exportDashboard();
   },[data,exportDashboard,exportKey]);
 
-  const mutate=async(item:WorkItem,action:"complete"|"delete")=>{
-    const prompt=action==="complete"?`确定完结波次 ${item.waveNo}？所有进行中的该波次计时会结束。`:`确定移除未开始的波次 ${item.waveNo}？`;
+  const mutate=async(item:WorkItem,action:"complete"|"interrupt"|"delete")=>{
+    const prompt=action==="complete"?`确定完结波次 ${item.waveNo}？所有进行中的该波次计时会结束。`:action==="interrupt"?`确定中断波次 ${item.waveNo}？正在计时的参与人员将转为在岗待命。`:`确定移除未开始的波次 ${item.waveNo}？`;
     if(!window.confirm(prompt))return;
     setPendingWaveId(item.id);setError("");
     try{
       await timeApi(action==="delete"?`/api/v1/timekeeping/waves?id=${item.id}`:"/api/v1/timekeeping/waves",{
         method:action==="delete"?"DELETE":"PATCH",
-        ...(action==="complete"?{body:JSON.stringify({id:item.id,action:"complete"})}:{}),
+        ...(action!=="delete"?{body:JSON.stringify({id:item.id,action})}:{}),
       });
       await load(date,range);
     }catch(saveError){setError(saveError instanceof Error?saveError.message:"波次操作失败")}
@@ -199,14 +202,13 @@ export default function DashboardPage({date,range,exportKey,importOpen,closeImpo
 
       <section className="time-card time-wave-board">
       <div className="time-card-title time-dashboard-wave-title"><div><h3>工作汇总</h3><p>当前波次及所选日期参与过的波次</p></div><div className="time-dashboard-filters">
-        {(["channel","type","state"] as const).map(key=><MultiSelectFilter key={key} label={{channel:"渠道",type:"类型",state:"状态"}[key]} options={filterOptions[key]} excluded={filters[key]} open={openFilter===key} setOpen={open=>setOpenFilter(open?key:null)} setExcluded={excluded=>setFilters(current=>({...current,[key]:excluded}))}/>) }
+        {(["channel","type","state","employee"] as const).map(key=><MultiSelectFilter key={key} label={{channel:"渠道",type:"类型",state:"状态",employee:"员工"}[key]} options={filterOptions[key]} excluded={filters[key]} open={openFilter===key} setOpen={open=>setOpenFilter(open?key:null)} setExcluded={excluded=>setFilters(current=>({...current,[key]:excluded}))}/>) }
       </div></div>
-      <div className="time-table-wrap"><table className="time-table time-data-table time-dashboard-wave-table"><colgroup><col className="time-wave-channel-col"/><col className="time-wave-type-col"/><col className="time-wave-number-col"/><col className="time-wave-state-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-lead-col"/><col className="time-wave-helper-col"/><col className="time-wave-start-col"/><col className="time-wave-duration-col"/><col className="time-wave-action-col"/></colgroup><thead><tr><th>渠道</th><th>类型</th><th>波次号</th><th>状态</th><th>SKU</th><th>订单</th><th>件数</th><th>负责人</th><th>协同</th><th>开始时间</th><th>波次工时</th><th>操作</th></tr></thead><tbody>{visibleProjects.map(item=><WaveRow item={item} key={item.id} pending={pendingWaveId===item.id} complete={()=>void mutate(item,"complete")} remove={()=>void mutate(item,"delete")}/>)}</tbody></table></div>
+      <div className="time-table-wrap"><table className="time-table time-data-table time-dashboard-wave-table"><colgroup><col className="time-wave-channel-col"/><col className="time-wave-type-col"/><col className="time-wave-number-col"/><col className="time-wave-state-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-lead-col"/><col className="time-wave-helper-col"/><col className="time-wave-start-col"/><col className="time-wave-duration-col"/><col className="time-wave-action-col"/></colgroup><thead><tr><th>渠道</th><th>类型</th><th>波次号</th><th>状态</th><th>SKU</th><th>订单</th><th>件数</th><th>负责人</th><th>协同</th><th>开始时间</th><th>波次工时</th><th>操作</th></tr></thead><tbody>{visibleProjects.map(item=><WaveRow item={item} key={item.id} pending={pendingWaveId===item.id} complete={()=>void mutate(item,"complete")} interrupt={()=>void mutate(item,"interrupt")} remove={()=>void mutate(item,"delete")}/>)}</tbody></table></div>
       {visibleProjects.length===0&&<p className="time-empty">当前筛选下暂无波次</p>}
       </section>
     </div>
 
-    <section className="time-card time-dashboard-health"><div className="time-card-title"><div><h3>数据健康</h3><p>超长班次及需要人工核对的记录</p></div><b>{data.anomalies.length}</b></div>{data.anomalies.length?<div className="time-health-list">{data.anomalies.map((item,index)=><p key={`${item.employee}-${index}`}><span>!</span><b>{item.employee}</b>{item.message}</p>)}</div>:<div className="time-all-clear"><span>✓</span><div><b>当前记录正常</b><small>未发现超长班次或异常工时</small></div></div>}</section>
     {importOpen&&<WaveImportModal close={closeImport} saved={async()=>{closeImport();await load(date,range)}}/>}
   </div>;
 }
@@ -235,13 +237,14 @@ function MultiSelectFilter({label,options,excluded,open,setOpen,setExcluded}:{la
   return <div className="time-dashboard-filter" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))setOpen(false)}}><span>{label}</span><div><button type="button" aria-expanded={open} onClick={()=>setOpen(!open)}>{summary}<i>⌄</i></button>{open&&<div className="time-dashboard-filter-menu"><div><button type="button" onClick={()=>setExcluded([])}>全选</button><button type="button" onClick={()=>setExcluded(options.map(option=>option.value))}>清空</button></div>{options.map(option=><label key={option.value}><input type="checkbox" checked={!excluded.includes(option.value)} onChange={()=>setExcluded(excluded.includes(option.value)?excluded.filter(value=>value!==option.value):[...excluded,option.value])}/><span>{option.label}</span><small>{option.count}</small></label>)}</div>}</div></div>;
 }
 
-function WaveRow({item,pending,complete,remove}:{item:WorkItem;pending:boolean;complete:()=>void;remove:()=>void}){
+function WaveRow({item,pending,complete,interrupt,remove}:{item:WorkItem;pending:boolean;complete:()=>void;interrupt:()=>void;remove:()=>void}){
   const state=waveState(item);
   const lead=item.participants.find(person=>person.role==="lead");
   const helpers=item.participants.filter(person=>person.role==="helper");
   const removable=item.status==="active"&&item.employeeCount===0;
   const removeHint=removable?"移除未开始的波次":item.status==="active"?"已有人员参与，不能移除":"已完成波次不能移除";
-  return <tr className={item.status==="completed"?"completed":undefined}><td><WaveChannelTag value={item.channelName}/></td><td><WaveTypeTag value={item.channelType}/></td><td><code>{item.waveNo??item.code}</code></td><td><span className={`time-state ${waveStateClass(state)}`}>{waveStateLabel(state)}</span></td><td className="time-number">{item.skuCount}</td><td className="time-number">{item.orderCount}</td><td className="time-number">{item.pieceCount}</td><td>{lead?<PersonTag person={lead}/>:<em className="time-person-empty">—</em>}</td><td><HelperSummary helpers={helpers}/></td><td className="time-number">{formatClockWithSeconds(item.startedAt)}</td><td className="time-number"><b>{formatDurationWithSeconds(item.totalMs)}</b></td><td><div className="time-row-actions"><button disabled={pending||item.status==="completed"} onClick={complete} title={item.status==="completed"?"该波次已经完结":"完结波次"}>完结</button><button className="danger" disabled={pending||!removable} onClick={remove} title={removeHint}>移除</button></div></td></tr>;
+  const interruptible=item.status==="active"&&item.activeCount>0&&!item.interruptedAt;
+  return <tr className={item.status==="completed"?"completed":item.interruptedAt?"interrupted":undefined}><td><WaveChannelTag value={item.channelName}/></td><td><WaveTypeTag value={item.channelType}/></td><td><code>{item.waveNo??item.code}</code></td><td><span className={`time-state ${waveStateClass(state)}`}>{waveStateLabel(state)}</span></td><td className="time-number">{item.skuCount}</td><td className="time-number">{item.orderCount}</td><td className="time-number">{item.pieceCount}</td><td>{lead?<PersonTag person={lead}/>:<em className="time-person-empty">—</em>}</td><td><HelperSummary helpers={helpers}/></td><td className="time-number">{formatClockWithSeconds(item.startedAt)}</td><td className="time-number"><b>{formatDurationWithSeconds(item.totalMs)}</b></td><td><div className="time-row-actions"><button disabled={pending||item.status==="completed"} onClick={complete} title={item.status==="completed"?"该波次已经完结":"完结波次"}>完结</button><button className="interrupt" disabled={pending||!interruptible} onClick={interrupt} title={item.interruptedAt?"该波次已中断":item.activeCount?"中断波次并将参与人员转为待命":"只有正在进行的波次可以中断"}>中断</button><button className="danger" disabled={pending||!removable} onClick={remove} title={removeHint}>移除</button></div></td></tr>;
 }
 
 function HelperSummary({helpers}:{helpers:WorkParticipant[]}){
@@ -270,6 +273,7 @@ function WaveImportModal({close,saved}:{close:()=>void;saved:()=>Promise<void>})
 function WavePreview({rows}:{rows:ParsedWave[]}){if(!rows.length)return <p className="time-empty">尚未识别到可导入的波次</p>;return <div className="time-wave-preview">{rows.slice(0,8).map(row=><div key={row.waveNo}><b>{row.waveNo}</b><span>{row.channelName} · {row.channelType}</span><small>{row.skuCount} SKU / {row.orderCount} 单 / {row.pieceCount} 件</small></div>)}{rows.length>8&&<p>还有 {rows.length-8} 个波次</p>}</div>}
 
 function countOptions(values:string[]):FilterOption[]{const counts=new Map<string,number>();for(const value of values)counts.set(value,(counts.get(value)??0)+1);return Array.from(counts,([value,count])=>({value,label:value,count}))}
-function waveState(item:Pick<WorkItem,"status"|"activeCount"|"startedAt">):WaveState{if(item.status==="completed")return "completed";if(item.activeCount>0)return "working";if(item.startedAt===null)return "unstarted";return "paused"}
-function waveStateLabel(state:WaveState){return ({completed:"已完成",working:"进行中",unstarted:"未开始",paused:"暂停"} as const)[state]}
-function waveStateClass(state:WaveState){return state==="working"?"working":state==="unstarted"?"ready":"off"}
+function participantOptions(items:WorkItem[]):FilterOption[]{const options=new Map<number,FilterOption>();for(const item of items)for(const person of item.participants){const current=options.get(person.employeeId);if(current)current.count+=1;else options.set(person.employeeId,{value:String(person.employeeId),label:person.name,count:1})}return Array.from(options.values()).sort((left,right)=>left.label.localeCompare(right.label,"zh-CN"))}
+function waveState(item:Pick<WorkItem,"status"|"interruptedAt"|"activeCount"|"startedAt">):WaveState{if(item.status==="completed")return "completed";if(item.interruptedAt)return "interrupted";if(item.activeCount>0)return "working";if(item.startedAt===null)return "unstarted";return "paused"}
+function waveStateLabel(state:WaveState){return ({completed:"已完成",interrupted:"中断",working:"进行中",unstarted:"未开始",paused:"暂停"} as const)[state]}
+function waveStateClass(state:WaveState){return state==="interrupted"?"interrupted":state==="working"?"working":state==="unstarted"?"ready":"off"}

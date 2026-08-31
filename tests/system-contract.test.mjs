@@ -110,6 +110,16 @@ test("grants admin every registered page and keeps ordinary accounts explicitly 
   assert.match(usersRoute,/pagePermissions\.length===0/);
 });
 
+test("keeps the desktop sidebar compact and stacks time below the date",async()=>{
+  const css=await read("app/warehouse-enhancements.css");
+  assert.match(css,/@media \(min-width: 761px\) \{[\s\S]*?\.sidebar \{[\s\S]*?width: 180px;/);
+  assert.match(css,/\.workspace \{[\s\S]*?width: calc\(100% - 180px\);[\s\S]*?margin-left: 180px;/);
+  assert.match(css,/\.sidebar-date \{[\s\S]*?grid-template-columns: minmax\(0,1fr\);/);
+  assert.match(css,/\.sidebar-clock \{[\s\S]*?display: flex;[\s\S]*?width: 100%;/);
+  assert.match(css,/\.sidebar-bottom > \.nav-item \{[\s\S]*?height: 34px;/);
+  assert.match(css,/\.sidebar-bottom \.avatar \{[\s\S]*?width: 28px;[\s\S]*?height: 28px;/);
+});
+
 test("keeps the fresh timekeeping system isolated behind four page permissions",async()=>{
   const paths=[
     "db/timekeeping-schema.ts","db/timekeeping-runtime.ts",
@@ -130,8 +140,10 @@ test("keeps the fresh timekeeping system isolated behind four page permissions",
     assert.match(schema,new RegExp(`"${table}"`),`${table} must be registered in the isolated schema`);
     assert.match(runtime,new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`),`${table} must be created additively`);
   }
-  assert.match(runtime,/TIMEKEEPING_SCHEMA_VERSION=3/);
+  assert.match(runtime,/TIMEKEEPING_SCHEMA_VERSION=4/);
   assert.match(runtime,/ADD COLUMN IF NOT EXISTS employee_code TEXT/);
+  assert.match(runtime,/ADD COLUMN IF NOT EXISTS interrupted_at TIMESTAMPTZ/);
+  assert.match(schema,/interruptedAt:utcTimestamp\("interrupted_at"\)/);
   assert.match(runtime,/pg_advisory_lock/);
   assert.match(runtime,/JOB-SCAN/);
   assert.doesNotMatch(runtime,/DROP TABLE|DROP COLUMN|TRUNCATE|INSERT INTO time_employees/i);
@@ -156,21 +168,47 @@ test("keeps the fresh timekeeping system isolated behind four page permissions",
   assert.doesNotMatch(employeesPage,/thisWeekMs|lastWeekMs|label="本周"|label="上周"/);
   assert.match(employeesPage,/createPortal\(<div className="time-employee-titlebar"/);
   assert.match(employeesPage,/className="time-employee-title-filters"/);
+  assert.match(employeesPage,/className="time-employee-scan-link"/);
+  assert.match(employeesPage,/isAdmin&&<button className="time-secondary"/);
+  assert.match(employeesPage,/导出扫描素材/);
+  assert.match(employeesPage,/\/api\/v1\/timekeeping\/employees\/export/);
+  assert.match(app,/setTimeScanBadge\(badge\);setActive\("扫描台"\)/);
   assert.doesNotMatch(employeesPage,/员工主数据|员工 ID 由系统自动生成|className="time-toolbar"/);
   assert.doesNotMatch(employeesPage,/className="time-hero"/);
   assert.match(await read("lib/timekeeping/read-model.ts"),/todayLastSignOut:toIsoOrNull\(todayLastSignOut\)/);
+  const employeeExportRoute=await read("app/api/v1/timekeeping/employees/export/route.ts");
+  const employeeExport=await read("lib/timekeeping/employee-scan-export.ts");
+  assert.match(employeeExportRoute,/authorizePageAccess\("time-employees"\)/);
+  assert.match(employeeExportRoute,/access\.user\.role!=="admin"/);
+  assert.match(employeeExportRoute,/content-type":"application\/zip"/);
+  assert.match(employeeExport,/BARCODE_PNG_WIDTH=1200/);
+  assert.match(employeeExport,/BARCODE_PNG_HEIGHT=300/);
+  assert.match(employeeExport,/QR_PNG_SIZE=600/);
+  for(const folder of ["条码-PNG","条码-SVG","二维码-PNG","二维码-SVG"])assert.match(employeeExport,new RegExp(folder));
+  assert.match(employeeExport,/Code 128 条码/);
   const wavesRoute=await read("app/api/v1/timekeeping/waves/route.ts");
   assert.match(wavesRoute,/authorizePageAccess\("time-scan","time-dashboard"\)/);
   assert.match(wavesRoute,/authorizePageAccess\("time-dashboard"\)/);
+  assert.match(wavesRoute,/body\.action==="complete"\|\|body\.action==="interrupt"/);
+  assert.match(wavesRoute,/interruptedAt:now/);
+  assert.match(wavesRoute,/只有正在进行的波次可以中断/);
   assert.doesNotMatch(wavesRoute,/time-waves/);
   await assert.rejects(read("app/timekeeping/waves-page.tsx"),error=>error?.code==="ENOENT");
-  assert.match(await read("lib/timekeeping/scan.ts"),/lockTimekeeping\(tx\)/);
-  assert.match(await read("lib/timekeeping/scan.ts"),/timeScanEvents\.responsePayload/);
+  const scanLogic=await read("lib/timekeeping/scan.ts");
+  assert.match(scanLogic,/lockTimekeeping\(tx\)/);
+  assert.match(scanLogic,/timeScanEvents\.responsePayload/);
+  assert.match(scanLogic,/isNull\(timeWorkItems\.interruptedAt\)/);
+  assert.match(scanLogic,/set\(\{interruptedAt:null\}\)/);
   const scanPage=await read("app/timekeeping/scan-page.tsx");
-  assert.match(scanPage,/window\.setTimeout\(\(\)=>void scan\(normalized\),320\)/);
+  assert.match(scanPage,/window\.setTimeout\(\(\)=>\{if\(snapshot\)selectScannedCode\(normalized\);else void scan\(normalized\)\},320\)/);
   assert.match(scanPage,/className="time-scan-grid"/);
   assert.doesNotMatch(scanPage,/\{snapshot&&<div className="time-scan-grid"/);
-  assert.doesNotMatch(scanPage,/>确认<\/button>/);
+  assert.match(scanPage,/确认 \/ CONFIRM/);
+  assert.match(scanPage,/onClick=\{confirmSelection\}/);
+  assert.match(scanPage,/selection\.confirmMessage&&!window\.confirm/);
+  assert.match(scanPage,/onClick=\{\(\)=>selectAction\("clock-in"\)\}/);
+  assert.match(scanPage,/onClick=\{\(\)=>selectItem\(item\)\}/);
+  assert.doesNotMatch(scanPage,/onClick=\{\(\)=>void scan\("ACT-(?:CLOCKIN|OUT|WAVE-COMPLETE)"/);
   assert.match(scanPage,/今日操作/);
   assert.match(scanPage,/todayOperations/);
   assert.match(scanPage,/employeeOperations/);
@@ -179,11 +217,15 @@ test("keeps the fresh timekeeping system isolated behind four page permissions",
   assert.doesNotMatch(scanPage,/time-scan-title-copy|扫码工作台|等待扫描员工卡/);
   assert.match(scanPage,/className="time-current-employee"/);
   assert.ok(scanPage.indexOf("time-current-employee")<scanPage.indexOf("time-current-task"),"姓名必须在当前任务上方");
-  assert.match(scanPage,/className=\{isCurrent\?"current":undefined\}/);
+  assert.match(scanPage,/selected\?"selected":""/);
   assert.match(scanPage,/currentProjectId=\{snapshot\?\.currentProject\?\.id\?\?null\}/);
+  assert.match(scanPage,/selectedProjectId=\{selection\?\.projectId\?\?null\}/);
   assert.ok(scanPage.indexOf("time-button-row")<scanPage.indexOf("time-current-history"),"今日记录必须显示在当前状态操作按钮下方");
   assert.doesNotMatch(scanPage,/本机最近操作|setLogs|完结波次并 Sign Out/);
   const timekeepingCss=await read("app/timekeeping.css");
+  assert.match(timekeepingCss,/\.time-confirm-button \{[^}]*width: calc\(100% - 40px\);/s);
+  assert.match(timekeepingCss,/\.time-state\.interrupted \{[^}]*#ffe5e5;[^}]*#b42323;/s);
+  assert.match(timekeepingCss,/\.time-employee-id-entry \{ -webkit-text-security: disc; \}/);
   assert.match(timekeepingCss,/\.time-scan-wave-select \{[^}]*border: 0;[^}]*color: #1e293b;[^}]*font-size: 15px;/s);
   assert.match(timekeepingCss,/\.time-wave-type > span \{[^}]*inset: 0;[^}]*line-height: 24px;[^}]*text-align: center;/s);
   assert.match(timekeepingCss,/\.time-scan-wave-table td:nth-child\(2\) \.time-wave-type,[^{]*\.time-dashboard-wave-table td:nth-child\(2\) \.time-wave-type \{ margin-inline: auto; \}/s);
@@ -201,6 +243,8 @@ test("keeps the fresh timekeeping system isolated behind four page permissions",
   assert.match(recordsPage,/createPortal\(<div className="time-record-titlebar time-no-print"/);
   assert.doesNotMatch(recordsPage,/<div><b>扫描员工卡<\/b>|扫描后自动查询自然月记录|查询记录/);
   assert.match(recordsPage,/<b aria-live="polite">\{pending\?"识别中":"自动识别"\}<\/b>/);
+  assert.doesNotMatch(`${scanPage}\n${recordsPage}`,/type="password"/);
+  assert.match(recordsPage,/className="time-employee-id-entry" type="text"/);
   assert.doesNotMatch(recordsPage,/className="time-card time-record-lookup/);
   for(const label of ["自然月记录","当天处理内容","时间修改日志","导出整月数据","导出整月 PDF"]) {
     assert.match(recordsPage,new RegExp(label));
@@ -226,9 +270,10 @@ test("keeps the fresh timekeeping system isolated behind four page permissions",
   assert.match(dashboardPage,/if-none-match/);
   assert.match(dashboardPage,/REVISION_POLL_MS=10_000/);
   assert.doesNotMatch(dashboardPage,/setInterval\([^)]*timeApi<DashboardResponse>/s);
-  for(const label of ["波次数量","波次状态","未开启","当前","已完成","工作总时长","波次工时","工作汇总","数据健康"]) {
+  for(const label of ["波次数量","波次状态","未开启","当前","已完成","工作总时长","波次工时","工作汇总"]) {
     assert.match(dashboardPage,new RegExp(label));
   }
+  assert.doesNotMatch(dashboardPage,/数据健康|anomalies|time-dashboard-health/);
   assert.doesNotMatch(dashboardPage,/>日常<|>当日员工<|员工ID/);
   assert.doesNotMatch(dashboardPage,/<Metric label="(?:扫描工时|其他工时)"/);
   assert.match(dashboardPage,/WaveStatusMetric total=\{waveKpis\.total\} unstarted=\{waveKpis\.unstarted\} current=\{waveKpis\.current\} completed=\{waveKpis\.completed\}/);
@@ -236,6 +281,9 @@ test("keeps the fresh timekeeping system isolated behind four page permissions",
   assert.match(dashboardPage,/<small>波次数量 \{total\}<\/small>/);
   assert.match(dashboardPage,/EmployeeStatusMetric total=\{employeeKpis\.total\} picking=\{employeeKpis\.picking\} standby=\{employeeKpis\.standby\}/);
   assert.match(dashboardPage,/员工统计/);
+  assert.match(dashboardPage,/employee:participantOptions\(projects\)/);
+  assert.match(dashboardPage,/employee:"员工"/);
+  assert.match(dashboardPage,/!employeeFilterActive\|\|item\.participants\.some\(person=>!filters\.employee\.includes\(String\(person\.employeeId\)\)\)/);
   assert.match(timekeepingCss,/\.time-status-metric i \{[^}]*height: 24px;[^}]*line-height: 24px;/s);
   assert.match(timekeepingCss,/\.time-dashboard-title-actions \{[^}]*justify-content: center;[^}]*margin-inline: auto;/s);
   assert.match(dashboardPage,/className="time-dashboard-main-grid"/);
@@ -248,8 +296,10 @@ test("keeps the fresh timekeeping system isolated behind four page permissions",
   assert.match(dashboardPage,/RollingClock/);
   assert.match(timekeepingCss,/@keyframes time-clock-fade \{ from \{ opacity: \.35; \} to \{ opacity: 1; \} \}/);
   assert.doesNotMatch(timekeepingCss,/time-clock-roll|translateY\(-\.7em\)/);
-  assert.match(dashboardPage,/item\.status==="completed"\?"completed":undefined/);
+  assert.match(dashboardPage,/item\.status==="completed"\?"completed":item\.interruptedAt\?"interrupted":undefined/);
   assert.match(dashboardPage,/disabled=\{pending\|\|item\.status==="completed"\}/);
+  assert.match(dashboardPage,/className="interrupt"/);
+  assert.match(dashboardPage,/mutate\(item,"interrupt"\)/);
   const waveDisplay=await read("app/timekeeping/wave-display.tsx");
   assert.match(waveDisplay,/WaveChannelTag/);
   assert.match(waveDisplay,/WaveTypeTag/);
@@ -263,7 +313,7 @@ test("keeps the fresh timekeeping system isolated behind four page permissions",
   for(const label of ["前一天","后一天","当前波次","时间段","导出","导入波次"])assert.match(warehouseApp,new RegExp(label));
   const dashboardActionOrder=["setTimeDashboardImportOpen(true)","time-dashboard-current","time-dashboard-date","time-dashboard-range","time-dashboard-export"].map(value=>warehouseApp.indexOf(value));
   assert.ok(dashboardActionOrder.every((position,index)=>position>=0&&(index===0||position>dashboardActionOrder[index-1])),"现场看板操作顺序必须为导入、当前波次、日期、时间段、导出");
-  for(const label of ["负责人","协同","导入当前波次","完结","移除","全选","清空"])assert.match(dashboardPage,new RegExp(label));
+  for(const label of ["负责人","协同","导入当前波次","完结","中断","移除","全选","清空"])assert.match(dashboardPage,new RegExp(label));
   assert.match(dashboardPage,/disabled=\{pending\|\|!removable\}/);
   assert.match(dashboardPage,/formatDurationWithSeconds/);
   const dashboardRange=await read("lib/timekeeping/dashboard-range.ts");
@@ -274,10 +324,14 @@ test("keeps the fresh timekeeping system isolated behind four page permissions",
   assert.match(revisionRoute,/status:304/);
   assert.match(revisionRoute,/etag/);
   const readModel=await read("lib/timekeeping/read-model.ts");
+  const timekeepingTypes=await read("app/timekeeping/types.ts");
+  assert.doesNotMatch(readModel,/anomalies|连续开工超过 14 小时/);
+  assert.doesNotMatch(timekeepingTypes,/anomalies/);
   assert.match(readModel,/sessionDurationInRange/);
   assert.match(readModel,/work_date BETWEEN \$1 AND \$2/);
   assert.match(readModel,/timestampInRange\(item\.createdAt,rangeStart,rangeEnd\)/);
   assert.match(readModel,/toSorted\(\(left,right\)=>left\.sortOrder-right\.sortOrder\|\|left\.id-right\.id\)/);
+  assert.match(readModel,/interruptedAt:toIsoOrNull\(item\.interrupted_at\)/);
   const testDataSeed=await read("scripts/seed-timekeeping-test-data.mjs");
   assert.match(testDataSeed,/historicalAttendance/);
   assert.match(testDataSeed,/threeSegments/);
@@ -345,6 +399,9 @@ test("uses one ExcelJS implementation for all workbook downloads",async()=>{
   const [app,excel,packageText]=await Promise.all([read("app/warehouse-app.tsx"),read("lib/excel-workbook.ts"),read("package.json")]);
   const packageJson=JSON.parse(packageText);
   assert.equal(packageJson.dependencies.exceljs,"^4.4.0");
+  assert.equal(packageJson.dependencies["bwip-js"],"^4.11.4");
+  assert.equal(packageJson.dependencies.jszip,"^3.10.1");
+  assert.equal(packageJson.dependencies.sharp,"^0.35.4");
   assert.equal(packageJson.dependencies.xlsx,undefined);
   assert.match(app,/async function downloadReserveWorkbook/);
   assert.match(app,/await downloadWorksheet\(\{/);

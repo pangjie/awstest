@@ -32,6 +32,7 @@ export const timeWorkItems=pgTable("time_work_items",{
   pieceCount:integer("piece_count").notNull().default(0),
   sortOrder:integer("sort_order").notNull().default(0),
   status:text("status",{enum:["active","completed"]}).notNull().default("active"),
+  interruptedAt:utcTimestamp("interrupted_at"),
   completedAt:utcTimestamp("completed_at"),
   createdAt:utcTimestamp("created_at").notNull().defaultNow(),
 },table=>[
