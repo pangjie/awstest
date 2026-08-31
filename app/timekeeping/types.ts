@@ -10,7 +10,7 @@ export type EmployeeRecord={id:number;badgeCode:string;name:string;type:"OZM"|"J
 export type EmployeesResponse={ok:true;generatedAt:string;period:{today:string};employees:EmployeeRecord[]};
 
 export type WorkParticipant={employeeId:number;name:string;totalMs:number;firstStartedAt:string;lastEndedAt:string|null;sessionCount:number;active:boolean;onDuty:boolean;role:"lead"|"helper"};
-export type WorkItem={id:number;barcode:string;code:string;waveNo:string|null;name:string;client:string;channelName:string;channelType:string;workType:"wave"|"standard";skuCount:number;orderCount:number;pieceCount:number;sortOrder:number;status:"active"|"completed";createdAt:string;completedAt:string|null;startedAt:string|null;lastEndedAt:string|null;totalMs:number;employeeCount:number;activeCount:number;participants:WorkParticipant[]};
+export type WorkItem={id:number;barcode:string;code:string;waveNo:string|null;name:string;client:string;channelName:string;channelType:string;workType:"wave"|"standard";skuCount:number;orderCount:number;pieceCount:number;sortOrder:number;status:"active"|"completed";interruptedAt:string|null;createdAt:string;completedAt:string|null;startedAt:string|null;lastEndedAt:string|null;totalMs:number;employeeCount:number;activeCount:number;participants:WorkParticipant[]};
 export type ScanOperation={id:string;time:string;event:string;tone:"success"|"info"|"warning"|"error";message:string;employeeId:number|null;employeeName:string;operator:string};
 export type WorkItemsResponse={ok:true;generatedAt:string;standardTasks:WorkItem[];currentWaves:WorkItem[];historyWaves:WorkItem[];todayOperations:ScanOperation[]};
 
@@ -22,7 +22,6 @@ export type DashboardResponse={
   taskTotals:{totalMs:number;waveMs:number;scanMs:number;otherMs:number;activeCount:number;waveActiveCount:number;scanActiveCount:number;otherActiveCount:number};
   dailyTasks:Array<{id:number;code:string;name:string;sortOrder:number;totalMs:number;activeCount:number;participants:Array<{employeeId:number;name:string;totalMs:number;active:boolean}>}>;
   projectTotals:WorkItem[];
-  anomalies:Array<{level:"warning"|"info";employee:string;message:string}>;
 };
 
 export type EmployeeReport={
