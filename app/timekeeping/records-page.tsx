@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { downloadWorkbook } from "@/lib/excel-workbook";
 import { sanitizeEmployeeId } from "@/lib/timekeeping/employee-id";
 import { timeApi } from "./api";
+import { buildDailyTimelineRows, type DailyTimelineRow } from "./daily-timeline";
 import { currentDate, formatClock, formatClockWithSeconds, formatDuration, stateLabel } from "./format";
 import type { EmployeeReport } from "./types";
 import { WaveChannelTag, WaveTypeTag } from "./wave-display";
@@ -15,7 +16,6 @@ type TimeEditTarget={target:"attendance"|"work_session";recordId:number;field:"c
 type TimeEditInput={item:TimeEditTarget;localTime:string;note:string};
 type SaveResult={ok:boolean;message:string};
 type AttendancePair={signIn:string;signOut:string|null;signInModified:boolean;signOutModified:boolean};
-type TimelineRow={id:string;kind:"attendance"|"work";timestamp:string;nature:"考勤"|"波次"|"日常";waveNo:string;content:string;clock:string;duration:string;attendanceEvent:AttendanceEvent|null;project:WorkProject|null};
 
 export default function RecordsPage({titleTarget,isAdmin,initialBadge}:{titleTarget:HTMLDivElement|null;isAdmin:boolean;initialBadge:string}){
   const [badge,setBadge]=useState(initialBadge);
@@ -92,15 +92,11 @@ function EmployeeReportView({report,now,loading,isAdmin,onPeriodChange,onTimeEdi
   const firstHalfTotal=monthDays.reduce((sum,row)=>sum+(Number(row.workDate.slice(8,10))<=15?row.day?.onDutyMs??0:0),0)+(currentPeriodContainsToday&&Number(today.slice(8,10))<=15?liveOnDutyMs:0);
   const secondHalfTotal=monthDays.reduce((sum,row)=>sum+(Number(row.workDate.slice(8,10))>15?row.day?.onDutyMs??0:0),0)+(currentPeriodContainsToday&&Number(today.slice(8,10))>15?liveOnDutyMs:0);
   const periodTotal=report.period.totalMs+liveOnDutyMs;
-  const projects=report.projects.filter(project=>project.workDate===selectedWorkDate);
   const dailyEdits=[
     ...report.attendanceEdits.filter(edit=>edit.workDate===selectedWorkDate).map(edit=>({id:`attendance-${edit.id}`,label:edit.label,oldTimestamp:edit.oldTimestamp,newTimestamp:edit.newTimestamp,note:edit.note,editor:edit.editor,editedAt:edit.editedAt})),
     ...report.workSessionEdits.filter(edit=>edit.workDate===selectedWorkDate).map(edit=>({id:`session-${edit.id}`,label:`${edit.workCode} · ${edit.label}`,oldTimestamp:edit.oldTimestamp,newTimestamp:edit.newTimestamp,note:edit.note,editor:edit.editor,editedAt:edit.editedAt})),
   ].toSorted((left,right)=>timestamp(right.editedAt)-timestamp(left.editedAt)||right.id.localeCompare(left.id));
-  const timelineRows:TimelineRow[]=[
-    ...report.attendanceEvents.filter(event=>event.workDate===selectedWorkDate).map(event=>({id:event.id,kind:"attendance" as const,timestamp:event.timestamp,nature:"考勤" as const,waveNo:"",content:event.label,clock:formatClock(event.timestamp),duration:"",attendanceEvent:event,project:null})),
-    ...projects.map(project=>({id:`work-${project.id}`,kind:"work" as const,timestamp:project.startedAt,nature:project.workType==="wave"?"波次" as const:"日常" as const,waveNo:project.workType==="wave"?project.waveNo??"":"",content:project.workType==="wave"?waveSessionContent(project):project.name,clock:`${formatClock(project.startedAt)}–${project.endedAt?formatClock(project.endedAt):"进行中"}`,duration:formatDuration(project.totalMs+(!project.endedAt&&snapshot.state==="working"?elapsed:0)),attendanceEvent:null,project})),
-  ].toSorted((left,right)=>timestamp(left.timestamp)-timestamp(right.timestamp));
+  const timelineRows=buildDailyTimelineRows(report,selectedWorkDate,now);
 
   const selectWorkDate=(workDate:string)=>{setSelectedWorkDate(workDate);setEditingTarget(null);setEditNotice(null)};
   const openTimeEditor=(item:TimeEditTarget)=>{setEditingTarget(item);setEditTime(formatTimeInput(item.timestamp));setEditNote("");setEditNotice(null)};
@@ -136,7 +132,7 @@ function EmployeeReportView({report,now,loading,isAdmin,onPeriodChange,onTimeEdi
   </section>;
 }
 
-function TimelineContent({row}:{row:TimelineRow}){
+function TimelineContent({row}:{row:DailyTimelineRow}){
   if(!row.project||row.project.workType!=="wave")return <span title={row.content}>{row.content}</span>;
   return <span className="time-record-wave-content" title={row.content}><WaveChannelTag value={row.project.channelName}/><WaveTypeTag value={row.project.channelType}/><span>{row.project.skuCount} SKU / {row.project.orderCount} 单 / {row.project.pieceCount} 件</span></span>;
 }
@@ -178,7 +174,6 @@ async function exportMonthlyTimeline(report:EmployeeReport,now:number){
 }
 
 function inclusiveDateRange(startDate:string,endDate:string){const dates:string[]=[];const current=new Date(`${startDate}T00:00:00Z`);const end=new Date(`${endDate}T00:00:00Z`);while(current<=end){dates.push(current.toISOString().slice(0,10));current.setUTCDate(current.getUTCDate()+1)}return dates}
-function waveSessionContent(project:EmployeeReport["projects"][number]){const channel=project.channelName||"未标注渠道";const type=project.channelType||"未标注类型";const defaultName=`${channel} · ${type}`;const detail=project.name&&project.name!==defaultName&&project.name!==project.waveNo?` · ${project.name}`:"";return `${channel} · ${type}${detail} · ${project.skuCount} SKU / ${project.orderCount} 单 / ${project.pieceCount} 件`}
 function timestamp(value:string){return new Date(value).getTime()}
 function prettyWorkDate(date:string){return new Intl.DateTimeFormat("zh-CN",{month:"short",day:"numeric",weekday:"short"}).format(new Date(`${date}T12:00:00`))}
 function prettyMonthDay(date:string){return `${date.slice(5,7)}月${date.slice(8,10)}日`}

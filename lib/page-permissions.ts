@@ -6,7 +6,8 @@ export const WAREHOUSE_DATA_TABS = [
 ] as const;
 
 export const TIMEKEEPING_PAGES = [
-  {key:"time-scan",label:"扫描台",icon:"⌁",section:"timekeeping"},
+  {key:"time-scan",label:"任务分发",icon:"⌁",section:"timekeeping"},
+  {key:"time-card-scan",label:"工卡扫描",icon:"▣",section:"timekeeping"},
   {key:"time-dashboard",label:"现场看板",icon:"▦",section:"timekeeping"},
   {key:"time-records",label:"工作记录",icon:"◉",section:"timekeeping"},
   {key:"time-employees",label:"员工数据",icon:"♙",section:"timekeeping"},

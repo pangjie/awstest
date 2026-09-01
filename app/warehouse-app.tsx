@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fetchWithTimeout } from "@/lib/client-fetch";
 import { downloadWorkbook, downloadWorksheet, readFirstWorksheet, readNamedWorksheet } from "@/lib/excel-workbook";
 import { findLocationMatches } from "@/lib/location-search";
@@ -181,6 +181,14 @@ function SidebarDateTime() {
   </div>;
 }
 
+function subscribePortableDevice(onChange:()=>void){
+  const media=window.matchMedia("(hover: none), (pointer: coarse), (max-width: 760px)");
+  media.addEventListener("change",onChange);
+  return()=>media.removeEventListener("change",onChange);
+}
+function getPortableDeviceSnapshot(){return navigator.maxTouchPoints>0||window.matchMedia("(hover: none), (pointer: coarse), (max-width: 760px)").matches}
+function getServerPortableDeviceSnapshot(){return false}
+
 export default function WarehouseApp({user}:{user:SessionUser}) {
   const [active,setActive]=useState<PageLabel>(()=>NAVIGATION_DEFINITIONS.find(page=>canAccessAnyPage(user,page.pagePermissions))?.label??"备货操作");
   const [warehouseDataTab,setWarehouseDataTab]=useState<WarehouseDataTabKey>(()=>authorizedWarehouseDataTab(user,"tasks"));
@@ -205,6 +213,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
   const [timeDashboardExportKey,setTimeDashboardExportKey]=useState(0);
   const [timeDashboardImportOpen,setTimeDashboardImportOpen]=useState(false);
   const [timekeepingTitleTarget,setTimekeepingTitleTarget]=useState<HTMLDivElement|null>(null);
+  const portableDevice=useSyncExternalStore(subscribePortableDevice,getPortableDeviceSnapshot,getServerPortableDeviceSnapshot);
   const [ledgerMovements,setLedgerMovements]=useState<Movement[]|null>(null);
   const [taskHistory,setTaskHistory]=useState<Task[]|null>(null);
   const [pickLocations,setPickLocations]=useState<Location[]|null>(null);
@@ -347,7 +356,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
   const currentTaskRows=currentTask?(taskHistory??data!.tasks).filter(task=>task.id===currentTask.id):[];
   const latestCurrentTask=currentTaskRows[0]??currentTask;
 
-  return <main className="app-shell">
+  return <main className={`app-shell${portableDevice?" portable-device":""}${active==="工卡扫描"?" mobile-card-mode":""}`}>
     <aside className="sidebar">
       <div className="sidebar-head">
         <div className="brand"><BrandMark className="brand-mark"/><div><strong>内库</strong><span>WAREHOUSE</span></div></div>
@@ -379,12 +388,12 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
         {activeTimekeepingPage&&<TimekeepingModule
           page={activeTimekeepingPage} titleTarget={timekeepingTitleTarget} isAdmin={effectiveUser.role==="admin"}
           initialScanBadge={timeScanBadge} initialRecordBadge={timeRecordBadge}
-          openScan={allowedPageKeys.has("time-scan")?badge=>{setTimeScanBadge(badge);setActive("扫描台")}:undefined}
+          openScan={allowedPageKeys.has("time-scan")?badge=>{setTimeScanBadge(badge);setActive("任务分发")}:undefined}
           openRecords={allowedPageKeys.has("time-records")?badge=>{setTimeRecordBadge(badge);setActive("工作记录")}:undefined}
           dashboardDate={timeDashboardDate} dashboardExportStartDate={timeDashboardExportStartDate} dashboardExportEndDate={timeDashboardExportEndDate}
           dashboardFilters={timeDashboardFilters} setDashboardFilters={setTimeDashboardFilters} dashboardExportKey={timeDashboardExportKey}
           dashboardImportOpen={timeDashboardImportOpen} closeDashboardImport={()=>setTimeDashboardImportOpen(false)}
-          employeeSort={timeEmployeeSort} setEmployeeSort={setTimeEmployeeSort}/>}
+          employeeSort={timeEmployeeSort} setEmployeeSort={setTimeEmployeeSort} portableDevice={portableDevice}/>}
       </div>
     </section>
     {modal&&["store","pick","move"].includes(modal)&&<TaskCreateModal type={modal as "store"|"pick"|"move"} pallets={data!.pallets} locations={modal==="pick"?allLocations:data!.locations} selected={selected} close={()=>setModal(null)} locationsLoading={modal==="pick"&&pickLocationsLoading} locationsError={modal==="pick"?pickLocationsError:""}

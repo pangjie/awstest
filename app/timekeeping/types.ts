@@ -21,6 +21,12 @@ export type DashboardFilters=Record<DashboardFilterKey,string[]>;
 
 export type ScanResponse={ok:boolean;event:string;message:string;tone:"success"|"info"|"warning"|"error";duplicate?:boolean;employeeId?:number;snapshot?:EmployeeSnapshot;contextExpiresAt?:number};
 
+export type CardScanEmployeeResponse={
+  ok:true;generatedAt:string;workDate:string;snapshot:EmployeeSnapshot;
+  attendanceEvents:EmployeeReport["attendanceEvents"];
+  projects:EmployeeReport["projects"];
+};
+
 export type DashboardResponse={
   ok:true;date:string;range:{id:"custom";label:string;startDate:string;endDate:string;start:string;end:string};revision:number;generatedAt:string;timeZone:string;filterUniverse:{channels:string[]};
   attendance:Array<{employeeId:number;name:string;type:string;clockIn:string|null;clockOut:string|null;onDutyMs:number;productiveMs:number;offDutyMs:number;state:string;currentProject:{code:string;name:string}|null}>;

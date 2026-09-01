@@ -43,11 +43,17 @@ export async function getEmployeeSnapshot(identifier:number|string,db:Pick<Datab
     .from(timeWorkSessions).innerJoin(timeWorkItems,eq(timeWorkSessions.workItemId,timeWorkItems.id))
     .leftJoin(timeWaveAssignments,and(eq(timeWaveAssignments.workItemId,timeWorkItems.id),eq(timeWaveAssignments.employeeId,employee.id)))
     .where(and(eq(timeWorkSessions.employeeId,employee.id),isNull(timeWorkSessions.endedAt))).limit(1))[0]??null:null;
-  const attachedWave=!shift?(await db.select({id:timeWorkSessions.id,startedAt:timeWorkSessions.startedAt,workItemId:timeWorkItems.id,code:timeWorkItems.code,name:timeWorkItems.name,workType:timeWorkItems.workType,waveNo:timeWorkItems.waveNo,status:timeWorkItems.status,role:timeWaveAssignments.role})
+  const latestTodaySession=!activeSession?(await db.select({id:timeWorkSessions.id,startedAt:timeWorkSessions.startedAt,workItemId:timeWorkItems.id,code:timeWorkItems.code,name:timeWorkItems.name,workType:timeWorkItems.workType,waveNo:timeWorkItems.waveNo,status:timeWorkItems.status,role:timeWaveAssignments.role})
+    .from(timeWorkSessions).innerJoin(timeWorkItems,eq(timeWorkSessions.workItemId,timeWorkItems.id))
+    .innerJoin(timeShifts,eq(timeWorkSessions.shiftId,timeShifts.id))
+    .leftJoin(timeWaveAssignments,and(eq(timeWaveAssignments.workItemId,timeWorkItems.id),eq(timeWaveAssignments.employeeId,employee.id)))
+    .where(and(eq(timeWorkSessions.employeeId,employee.id),eq(timeShifts.workDate,today))).orderBy(desc(timeWorkSessions.startedAt),desc(timeWorkSessions.id)).limit(1))[0]??null:null;
+  const pausedStandard=latestTodaySession?.workType==="standard"&&latestTodaySession.status==="active"?latestTodaySession:null;
+  const attachedWave=!shift&&!pausedStandard?(await db.select({id:timeWorkSessions.id,startedAt:timeWorkSessions.startedAt,workItemId:timeWorkItems.id,code:timeWorkItems.code,name:timeWorkItems.name,workType:timeWorkItems.workType,waveNo:timeWorkItems.waveNo,status:timeWorkItems.status,role:timeWaveAssignments.role})
     .from(timeWorkSessions).innerJoin(timeWorkItems,eq(timeWorkSessions.workItemId,timeWorkItems.id))
     .leftJoin(timeWaveAssignments,and(eq(timeWaveAssignments.workItemId,timeWorkItems.id),eq(timeWaveAssignments.employeeId,employee.id)))
     .where(and(eq(timeWorkSessions.employeeId,employee.id),eq(timeWorkItems.workType,"wave"),eq(timeWorkItems.status,"active"))).orderBy(desc(timeWorkSessions.startedAt)).limit(1))[0]??null:null;
-  const currentProject=activeSession??attachedWave;
+  const currentProject=activeSession??pausedStandard??attachedWave;
   const now=Date.now();
   const onDutyMs=todayShifts.reduce((total,item)=>total+Math.max(0,new Date(item.clockOut??now).getTime()-new Date(item.clockIn).getTime()),0);
   const sessions=await db.select({startedAt:timeWorkSessions.startedAt,endedAt:timeWorkSessions.endedAt,shiftClockIn:timeShifts.clockIn,shiftClockOut:timeShifts.clockOut})
