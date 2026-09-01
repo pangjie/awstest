@@ -38,7 +38,7 @@ export async function performScan(user:InternalUser,input:ScanInput){
       if(duplicate)return {status:200,response:{...duplicate,duplicate:true}};
       const snapshot=await getEmployeeSnapshot(employeeByBadge.id,tx);
       if(!snapshot)throw new Error("员工记录已不存在");
-      const response:ScanResponse={ok:true,event:snapshot.shift?"IDENTIFIED":"CLOCK_IN_PENDING",message:snapshot.shift?`${employeeByBadge.name} 已识别 · ${snapshot.state==="working"?`正在处理 ${snapshot.currentProject?.code}`:"在岗 · 当前无任务"}`:`${employeeByBadge.name} 已识别 · 当前不在岗${snapshot.currentProject?` · 挂载波次 ${snapshot.currentProject.waveNo??snapshot.currentProject.code}`:" · 无挂载任务"}`,tone:"info",employeeId:employeeByBadge.id,snapshot,contextExpiresAt:Date.now()+90_000};
+      const response:ScanResponse={ok:true,event:snapshot.shift?"IDENTIFIED":"CLOCK_IN_PENDING",message:snapshot.shift?`${employeeByBadge.name} 已识别 · ${snapshot.state==="working"?`正在处理 ${snapshot.currentProject?.code}`:snapshot.currentProject?.workType==="standard"?`${snapshot.currentProject.code} 计时已暂停`:"在岗 · 当前无任务"}`:`${employeeByBadge.name} 已识别 · 当前不在岗${snapshot.currentProject?.workType==="standard"?` · 固定任务 ${snapshot.currentProject.code} 计时已暂停`:snapshot.currentProject?` · 挂载波次 ${snapshot.currentProject.waveNo??snapshot.currentProject.code}`:" · 无挂载任务"}`,tone:"info",employeeId:employeeByBadge.id,snapshot,contextExpiresAt:Date.now()+90_000};
       await recordEvent(tx,user,requestId,terminalId,employeeByBadge.id,snapshot.currentProject?.id??null,code,response);
       return {status:200,response};
     }
@@ -59,7 +59,8 @@ export async function performScan(user:InternalUser,input:ScanInput){
     const action=ACTIONS[code];
     if(!snapshot.shift){
       if(action!=="CLOCKIN")return reject(tx,user,requestId,terminalId,code,requestedEmployeeId,null,"SHIFT_REQUIRED","员工当前不在岗，本次操作未执行",snapshot,409);
-      const preferred=projectCode?await findActiveWorkItem(tx,projectCode):snapshot.currentProject?.workType==="wave"?await findActiveWorkItem(tx,snapshot.currentProject.code):null;
+      const preferred=projectCode?await findActiveWorkItem(tx,projectCode):snapshot.currentProject?await findActiveWorkItem(tx,snapshot.currentProject.code):null;
+      const resuming=Boolean(!projectCode&&preferred&&snapshot.currentProject?.id===preferred.id);
       if(projectCode&&!preferred)return reject(tx,user,requestId,terminalId,projectCode,requestedEmployeeId,null,"UNKNOWN_CODE",`无法识别任务 ${projectCode}`,snapshot,404);
       if(preferred){
         const leadConflict=await findLeadWave(tx,requestedEmployeeId,preferred.id);
@@ -70,7 +71,7 @@ export async function performScan(user:InternalUser,input:ScanInput){
       if(preferred)await startWork(tx,shift.id,requestedEmployeeId,preferred,now);
       await recordTimeRevision(tx);
       const next=await getEmployeeSnapshot(requestedEmployeeId,tx);
-      const response:ScanResponse={ok:true,event:preferred?"CLOCK_IN_PROJECT_START":"CLOCK_IN",message:preferred?`${snapshot.employee.name} Sign In 成功 · ${preferred.code} · ${preferred.name} 开始计时`:`${snapshot.employee.name}，Sign In 成功，当前尚未分配工作`,tone:"success",employeeId:requestedEmployeeId,snapshot:next??undefined,contextExpiresAt:Date.now()+90_000};
+      const response:ScanResponse={ok:true,event:preferred?(resuming?"CLOCK_IN_PROJECT_RESUME":"CLOCK_IN_PROJECT_START"):"CLOCK_IN",message:preferred?`${snapshot.employee.name} Sign In 成功 · ${preferred.code} · ${preferred.name} ${resuming?"继续计时":"开始计时"}`:`${snapshot.employee.name}，Sign In 成功，当前尚未分配工作`,tone:"success",employeeId:requestedEmployeeId,snapshot:next??undefined,contextExpiresAt:Date.now()+90_000};
       await recordEvent(tx,user,requestId,terminalId,requestedEmployeeId,preferred?.id??null,code,response);
       return {status:200,response};
     }
@@ -84,12 +85,14 @@ export async function performScan(user:InternalUser,input:ScanInput){
     if(action==="OUT"){
       let completed:WorkItem|null=null;
       if(hasCompletion){const completion=await validateCompletion(tx,requestedEmployeeId,completeProjectId);if(!completion.ok)return reject(tx,user,requestId,terminalId,code,requestedEmployeeId,completeProjectId,"WAVE_COMPLETE_REJECTED",completion.error,snapshot,409);completed=completion.item;await completeWave(tx,completion.item.id)}
+      const pausedStandard=snapshot.currentProject?.workType==="standard"?snapshot.currentProject:null;
       const now=new Date().toISOString();
       await tx.update(timeWorkSessions).set({endedAt:now}).where(and(eq(timeWorkSessions.employeeId,requestedEmployeeId),isNull(timeWorkSessions.endedAt)));
       await tx.update(timeShifts).set({clockOut:now,status:"closed"}).where(eq(timeShifts.id,snapshot.shift.id));
       await recordTimeRevision(tx);
       const next=await getEmployeeSnapshot(requestedEmployeeId,tx);
-      const response:ScanResponse={ok:true,event:completed?"WAVE_COMPLETE_CLOCK_OUT":"CLOCK_OUT",message:completed?`${snapshot.employee.name} · 波次 ${completed.waveNo} 已完结 · Sign Out 成功`:`${snapshot.employee.name}，Sign Out 成功`,tone:"success",employeeId:requestedEmployeeId,snapshot:next??undefined,contextExpiresAt:Date.now()+8_000};
+      const pausedProject=snapshot.currentProject;
+      const response:ScanResponse={ok:true,event:completed?"WAVE_COMPLETE_CLOCK_OUT":"CLOCK_OUT",message:completed?`${snapshot.employee.name} · 波次 ${completed.waveNo} 已完结，计时已结束 · Sign Out 成功`:pausedProject?`${snapshot.employee.name}，Sign Out 成功 · ${pausedProject.waveNo??pausedProject.code} 计时已暂停${pausedStandard?"，今天再次 Sign In 后继续":""}`:`${snapshot.employee.name}，Sign Out 成功`,tone:"success",employeeId:requestedEmployeeId,snapshot:next??undefined,contextExpiresAt:Date.now()+8_000};
       await recordEvent(tx,user,requestId,terminalId,requestedEmployeeId,completed?.id??snapshot.currentProject?.id??null,code,response);
       return {status:200,response};
     }
@@ -99,17 +102,19 @@ export async function performScan(user:InternalUser,input:ScanInput){
       if(!completion.ok)return reject(tx,user,requestId,terminalId,code,requestedEmployeeId,completeProjectId,"WAVE_COMPLETE_REJECTED",completion.error,snapshot,409);
       await completeWave(tx,completion.item.id);await recordTimeRevision(tx);
       const next=await getEmployeeSnapshot(requestedEmployeeId,tx);
-      const response:ScanResponse={ok:true,event:"WAVE_COMPLETE",message:`${snapshot.employee.name} · 波次 ${completion.item.waveNo} 已完结`,tone:"success",employeeId:requestedEmployeeId,snapshot:next??undefined,contextExpiresAt:Date.now()+45_000};
+      const response:ScanResponse={ok:true,event:"WAVE_COMPLETE",message:`${snapshot.employee.name} · 波次 ${completion.item.waveNo} 已完结，计时已结束`,tone:"success",employeeId:requestedEmployeeId,snapshot:next??undefined,contextExpiresAt:Date.now()+45_000};
       await recordEvent(tx,user,requestId,terminalId,requestedEmployeeId,completion.item.id,code,response);return {status:200,response};
     }
 
     const item=await findActiveWorkItem(tx,code);
     if(!item)return reject(tx,user,requestId,terminalId,code,requestedEmployeeId,null,"UNKNOWN_CODE",`无法识别条码 ${code}`,snapshot,404);
+    let completedBeforeSwitch:WorkItem|null=null;
     if(hasCompletion){
       const completion=await validateCompletion(tx,requestedEmployeeId,completeProjectId);
       if(!completion.ok)return reject(tx,user,requestId,terminalId,code,requestedEmployeeId,completeProjectId,"WAVE_COMPLETE_REJECTED",completion.error,snapshot,409);
       if(completion.item.id===item.id)return reject(tx,user,requestId,terminalId,code,requestedEmployeeId,item.id,"WAVE_SWITCH_SAME_PROJECT","待完结波次不能同时作为下一个波次",snapshot,409);
       await completeWave(tx,completion.item.id);
+      completedBeforeSwitch=completion.item;
     }
     const leadConflict=await findLeadWave(tx,requestedEmployeeId,item.id);
     if(leadConflict)return reject(tx,user,requestId,terminalId,code,requestedEmployeeId,item.id,"LEAD_TASK_LOCKED",`该员工是波次 ${leadConflict.waveNo} 的主负责人，完结前不能切换任务`,snapshot,409);
@@ -118,7 +123,7 @@ export async function performScan(user:InternalUser,input:ScanInput){
     await tx.update(timeWorkSessions).set({endedAt:now}).where(and(eq(timeWorkSessions.employeeId,requestedEmployeeId),isNull(timeWorkSessions.endedAt)));
     await startWork(tx,snapshot.shift.id,requestedEmployeeId,item,now);await recordTimeRevision(tx);
     const next=await getEmployeeSnapshot(requestedEmployeeId,tx);
-    const response:ScanResponse={ok:true,event:hasCompletion?"WAVE_COMPLETE_PROJECT_START":"PROJECT_START",message:snapshot.currentProject?`${snapshot.employee.name} 任务 ${snapshot.currentProject.waveNo??snapshot.currentProject.name} → ${item.code} · ${item.name} · 新任务开始计时`:`${snapshot.employee.name} ${item.code} · ${item.name} 开始计时`,tone:"success",employeeId:requestedEmployeeId,snapshot:next??undefined,contextExpiresAt:Date.now()+45_000};
+    const response:ScanResponse={ok:true,event:completedBeforeSwitch?"WAVE_COMPLETE_PROJECT_START":"PROJECT_START",message:completedBeforeSwitch?`${snapshot.employee.name} · 波次 ${completedBeforeSwitch.waveNo??completedBeforeSwitch.code} 已完结，计时已结束 · ${item.code} · ${item.name} 开始计时`:snapshot.currentProject?`${snapshot.employee.name} 任务 ${snapshot.currentProject.waveNo??snapshot.currentProject.name} → ${item.code} · ${item.name} · 新任务开始计时`:`${snapshot.employee.name} ${item.code} · ${item.name} 开始计时`,tone:"success",employeeId:requestedEmployeeId,snapshot:next??undefined,contextExpiresAt:Date.now()+45_000};
     await recordEvent(tx,user,requestId,terminalId,requestedEmployeeId,item.id,code,response);return {status:200,response};
   });
 }

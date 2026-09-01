@@ -24,12 +24,14 @@ export async function readEmployees(){
       FROM time_employees ORDER BY active DESC,organization_type,COALESCE(employee_code,badge_code)`),
     pool.query<ShiftRow>(`SELECT id,employee_id,work_date,clock_in,clock_out,status FROM time_shifts
       WHERE work_date=$1 ORDER BY clock_in`,[today]),
-    pool.query<{employee_id:number;code:string;name:string}>(`SELECT DISTINCT ON (ws.employee_id)
-        ws.employee_id,wi.code,wi.name FROM time_work_sessions ws
-      JOIN time_work_items wi ON wi.id=ws.work_item_id JOIN time_shifts s ON s.id=ws.shift_id
-      WHERE ws.ended_at IS NULL AND s.status='open' ORDER BY ws.employee_id,ws.started_at DESC`),
+    pool.query<{employee_id:number;code:string;name:string;active:boolean}>(`SELECT latest.employee_id,latest.code,latest.name,
+        (latest.ended_at IS NULL AND latest.shift_status='open') AS active FROM (
+        SELECT DISTINCT ON (ws.employee_id) ws.employee_id,wi.code,wi.name,wi.work_type,wi.status AS item_status,ws.ended_at,s.status AS shift_status
+        FROM time_work_sessions ws JOIN time_work_items wi ON wi.id=ws.work_item_id JOIN time_shifts s ON s.id=ws.shift_id
+        WHERE s.work_date=$1 ORDER BY ws.employee_id,ws.started_at DESC,ws.id DESC
+      ) latest WHERE (latest.ended_at IS NULL AND latest.shift_status='open') OR (latest.work_type='standard' AND latest.item_status='active')`,[today]),
   ]);
-  const currentByEmployee=new Map(currentResult.rows.map(row=>[row.employee_id,{code:row.code,name:row.name}]));
+  const currentByEmployee=new Map(currentResult.rows.map(row=>[row.employee_id,{code:row.code,name:row.name,active:row.active}]));
   return {
     ok:true as const,
     generatedAt:new Date().toISOString(),
@@ -46,8 +48,8 @@ export async function readEmployees(){
       const attendanceEnd=open?now:todayLastSignOut??todayFirstSignIn;
       return {
         id:employee.id,badgeCode:employee.badge_code,name:employee.name,type:employee.organization_type,active:employee.active,
-        attendanceState:!employee.active?"inactive":open?(currentProject?"working":"ready"):todayShifts.length?"off":"not_started",
-        currentProject,
+        attendanceState:!employee.active?"inactive":open?(currentProject?.active?"working":"ready"):todayShifts.length?"off":"not_started",
+        currentProject:currentProject?{code:currentProject.code,name:currentProject.name}:null,
         todayFirstSignIn:toIsoOrNull(todayFirstSignIn),
         todayLastSignOut:toIsoOrNull(todayLastSignOut),
         todayOffDutyMs:todayFirstSignIn&&attendanceEnd?Math.max(0,durationMs(todayFirstSignIn,attendanceEnd)-todayMs):0,

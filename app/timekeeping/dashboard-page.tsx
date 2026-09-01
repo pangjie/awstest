@@ -113,7 +113,7 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
       const statisticRows:Array<Array<string|number>>=[
         ["统计项","数值","说明"],["日期范围",exportData.range.label,""],["波次数量",exportView.waveKpis.total,"按波次创建时间统计"],
         ["未开启波次",exportView.waveKpis.unstarted,""],["当前波次",exportView.waveKpis.current,""],["已完成波次",exportView.waveKpis.completed,""],
-        ["员工总数",exportView.employeeKpis.total,"当前在岗"],["拣货员工",exportView.employeeKpis.picking,"正在处理任务"],["待命员工",exportView.employeeKpis.standby,"在岗且暂无任务"],
+        ["员工总数",exportView.employeeKpis.total,"当前在岗"],["拣货员工",exportView.employeeKpis.picking,"正在处理波次"],["仓务员工",exportView.employeeKpis.warehouse,"正在处理其他工作项目"],["待命员工",exportView.employeeKpis.standby,"在岗且暂无任务"],
         ["工作总时长",formatDurationWithSeconds(exportView.taskTotals.totalMs),`${exportView.taskTotals.activeCount} 人当前计时`],["波次工时",formatDurationWithSeconds(exportView.taskTotals.waveMs),`${exportView.taskTotals.waveActiveCount} 人处理波次`],
         ...exportView.dailyTasks.map(task=>[task.name,formatDurationWithSeconds(task.totalMs),task.participants.map(person=>person.name).join("、")]),
       ];
@@ -163,7 +163,7 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
       <aside className="time-dashboard-stat-column" aria-label="现场统计">
         <div className="time-dashboard-metrics">
           <WaveStatusMetric total={waveKpis.total} unstarted={waveKpis.unstarted} current={waveKpis.current} completed={waveKpis.completed}/>
-          <EmployeeStatusMetric total={employeeKpis.total} picking={employeeKpis.picking} standby={employeeKpis.standby}/>
+          <EmployeeStatusMetric total={employeeKpis.total} picking={employeeKpis.picking} warehouse={employeeKpis.warehouse} standby={employeeKpis.standby}/>
           <Metric label="工作总时长" value={formatDurationWithSeconds(taskTotals.totalMs)} note={`${taskTotals.activeCount} 人当前计时`} timer/>
           <Metric label="波次工时" value={formatDurationWithSeconds(taskTotals.waveMs)} note={`${taskTotals.waveActiveCount} 人处理波次`} timer/>
         </div>
@@ -188,7 +188,7 @@ function Metric({label,value,note,timer=false}:{label:string;value:string|number
 
 function WaveStatusMetric({total,unstarted,current,completed}:{total:number;unstarted:number;current:number;completed:number}){return <article className="time-metric time-status-metric time-wave-status-metric"><span>波次状态<small>波次数量 {total}</small></span><div><label><b>{unstarted}</b><small>未开启</small></label><i>/</i><label><b>{current}</b><small>当前</small></label><i>/</i><label><b>{completed}</b><small>已完成</small></label></div></article>}
 
-function EmployeeStatusMetric({total,picking,standby}:{total:number;picking:number;standby:number}){return <article className="time-metric time-status-metric time-employee-status-metric"><span>员工统计</span><div><label><b>{total}</b><small>总数</small></label><i>/</i><label><b>{picking}</b><small>拣货</small></label><i>/</i><label><b>{standby}</b><small>待命</small></label></div></article>}
+function EmployeeStatusMetric({total,picking,warehouse,standby}:{total:number;picking:number;warehouse:number;standby:number}){return <article className="time-metric time-status-metric time-employee-status-metric"><span>员工统计<small>员工总数 {total}</small></span><div><label><b>{picking}</b><small>拣货</small></label><i>/</i><label><b>{warehouse}</b><small>仓务</small></label><i>/</i><label><b>{standby}</b><small>待命</small></label></div></article>}
 
 function DailyTaskSummary({tasks,openScan}:{tasks:DashboardResponse["dailyTasks"];openScan?:((badge:string)=>void)}){
   return <section className="time-dashboard-stat-group"><div className="time-daily-task-grid">{tasks.map(task=><DailyTaskMetric task={task} openScan={openScan} key={task.id}/>)}</div></section>;
@@ -196,7 +196,7 @@ function DailyTaskSummary({tasks,openScan}:{tasks:DashboardResponse["dailyTasks"
 
 function DailyTaskMetric({task,openScan}:{task:DashboardResponse["dailyTasks"][number];openScan?:((badge:string)=>void)}){
   const tooltipId=useId();
-  return <article className={`time-metric time-daily-stat${task.activeCount?" active":""}`} tabIndex={task.participants.length?0:undefined} aria-describedby={task.participants.length?tooltipId:undefined}><span>{task.name}</span><b><RollingClock value={formatDurationWithSeconds(task.totalMs)}/></b><small>{task.activeCount?`${task.activeCount} 人计时`:task.participants.length?`${task.participants.length} 人参与`:"当前无人"}</small>{task.participants.length>0&&<div id={tooltipId} role="tooltip" className="time-daily-people-popover"><strong>{task.name} · {task.participants.length} 人</strong><div>{task.participants.map(person=>openScan?<button type="button" className={`time-daily-person${person.active?" active":""}`} key={person.employeeId} onClick={()=>openScan(person.badgeCode)} title={`在扫描台打开 ${person.name}`}><i/><b>{person.name}</b><small>{formatDurationWithSeconds(person.totalMs)}</small></button>:<span className={`time-daily-person${person.active?" active":""}`} key={person.employeeId}><i/><b>{person.name}</b><small>{formatDurationWithSeconds(person.totalMs)}</small></span>)}</div></div>}</article>;
+  return <article className={`time-metric time-daily-stat${task.activeCount?" active":""}`} tabIndex={task.participants.length?0:undefined} aria-describedby={task.participants.length?tooltipId:undefined}><span>{task.name}</span><b><RollingClock value={formatDurationWithSeconds(task.totalMs)}/></b><small>{task.activeCount?`${task.activeCount} 人计时`:task.participants.length?`${task.participants.length} 人参与`:"当前无人"}</small>{task.participants.length>0&&<div id={tooltipId} role="tooltip" className="time-daily-people-popover"><strong>{task.name} · {task.participants.length} 人</strong><div>{task.participants.map(person=>openScan?<button type="button" className={`time-daily-person${person.active?" active":""}`} key={person.employeeId} onClick={()=>openScan(person.badgeCode)} title={`在任务分发中打开 ${person.name}`}><i/><b>{person.name}</b><small>{formatDurationWithSeconds(person.totalMs)}</small></button>:<span className={`time-daily-person${person.active?" active":""}`} key={person.employeeId}><i/><b>{person.name}</b><small>{formatDurationWithSeconds(person.totalMs)}</small></span>)}</div></div>}</article>;
 }
 
 function RollingClock({value}:{value:string}){
@@ -241,7 +241,7 @@ function LeadSummary({lead,helpers,openScan}:{lead:WorkParticipant|undefined;hel
   return <div className="time-dashboard-lead-summary">{lead?<PersonTag person={lead} showDuration={false} openScan={openScan}/>:<span className="time-dashboard-person time-person-empty">—</span>}<button ref={triggerRef} className="time-dashboard-helper-trigger" type="button" aria-describedby={position?tooltipId:undefined} aria-label={helpers.length?`协同 ${helpers.length} 人：${helpers.map(person=>person.name).join("、")}`:"无协同人员"} onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}><b>{helpers.length}</b></button>{position&&createPortal(<div id={tooltipId} role="tooltip" className={`time-dashboard-helper-popover${position.above?" above":""}`} style={{left:position.left,top:position.top}} onMouseEnter={cancelHide} onMouseLeave={hide}><strong>协同人员 · {helpers.length}</strong><div>{helpers.map(person=><PersonTag person={person} openScan={openScan} key={person.employeeId}/>)}</div></div>,document.body)}</div>;
 }
 
-function PersonTag({person,showDuration=true,openScan}:{person:WorkParticipant;showDuration?:boolean;openScan?:((badge:string)=>void)}){const className=`time-dashboard-person${person.active?" active":""}`;const title=openScan?`在扫描台打开 ${person.name}`:showDuration?`${person.name} · ${formatDurationWithSeconds(person.totalMs)}`:person.name;const content=<><i/><b>{person.name}</b>{showDuration&&<small>{formatDurationWithSeconds(person.totalMs)}</small>}</>;return openScan?<button type="button" className={className} title={title} onClick={()=>openScan(person.badgeCode)}>{content}</button>:<span className={className} title={title}>{content}</span>}
+function PersonTag({person,showDuration=true,openScan}:{person:WorkParticipant;showDuration?:boolean;openScan?:((badge:string)=>void)}){const className=`time-dashboard-person${person.active?" active":""}`;const title=openScan?`在任务分发中打开 ${person.name}`:showDuration?`${person.name} · ${formatDurationWithSeconds(person.totalMs)}`:person.name;const content=<><i/><b>{person.name}</b>{showDuration&&<small>{formatDurationWithSeconds(person.totalMs)}</small>}</>;return openScan?<button type="button" className={className} title={title} onClick={()=>openScan(person.badgeCode)}>{content}</button>:<span className={className} title={title}>{content}</span>}
 
 function WaveImportModal({close,saved}:{close:()=>void;saved:()=>Promise<void>}){
   const [text,setText]=useState("");const [error,setError]=useState("");const [pending,setPending]=useState(false);const parsed=useMemo(()=>parseWaveText(text),[text]);
@@ -261,9 +261,10 @@ function dashboardView(data:DashboardResponse|null,now:number){
   const rangeEnd=data?new Date(data.range.end).getTime():0;
   const datedProjects=projects.filter(item=>{const createdAt=new Date(item.createdAt).getTime();return createdAt>=rangeStart&&createdAt<rangeEnd});
   const waveKpis={total:datedProjects.length,current:datedProjects.filter(item=>waveState(item)==="working").length,unstarted:datedProjects.filter(item=>waveState(item)==="unstarted").length,completed:datedProjects.filter(item=>waveState(item)==="completed").length};
-  const picking=data?.attendance.filter(employee=>employee.state==="working").length??0;
+  const picking=totals?.waveActiveCount??0;
+  const warehouse=Math.max(0,(totals?.activeCount??0)-picking);
   const standby=data?.attendance.filter(employee=>employee.state==="ready").length??0;
-  return {projects,dailyTasks,taskTotals,waveKpis,employeeKpis:{total:picking+standby,picking,standby}};
+  return {projects,dailyTasks,taskTotals,waveKpis,employeeKpis:{total:picking+warehouse+standby,picking,warehouse,standby}};
 }
 
 function countOptions(values:string[]):FilterOption[]{const counts=new Map<string,number>();for(const value of values)counts.set(value,(counts.get(value)??0)+1);return Array.from(counts,([value,count])=>({value,label:value,count}))}

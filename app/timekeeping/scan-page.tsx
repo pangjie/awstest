@@ -41,19 +41,22 @@ export default function ScanPage({titleTarget,initialBadge}:{titleTarget:HTMLDiv
   const selectItem=useCallback((item:Pick<WorkItem,"id"|"code"|"name"|"waveNo">)=>{
     if(!snapshot)return;
     setError("");
+    const switchingTask=Boolean(snapshot.currentProject&&snapshot.currentProject.id!==item.id);
     const switchingLead=Boolean(currentLeadWave&&currentLeadWave.id!==item.id);
     setSelection({
       key:`item:${item.id}`,projectId:item.id,label:`${item.waveNo??item.name}`,
       code:snapshot.shift?item.code:"ACT-CLOCKIN",
       extra:{...(!snapshot.shift?{projectCode:item.code}:{}),...(switchingLead?{completeProjectId:currentLeadWave?.id}:{})},
-      confirmMessage:switchingLead?`完结波次 ${currentLeadWave?.waveNo??currentLeadWave?.code} 并切换到 ${item.waveNo??item.name}？`:undefined,
+      confirmMessage:switchingLead
+        ?`完结波次 ${currentLeadWave?.waveNo??currentLeadWave?.code} 并切换到 ${item.waveNo??item.name}？`
+        :switchingTask?`确定将任务从 ${snapshot.currentProject?.waveNo??snapshot.currentProject?.name} 切换到 ${item.waveNo??item.name}？`:undefined,
     });
   },[currentLeadWave,snapshot]);
   const selectAction=useCallback((action:"clock-in"|"clock-out"|"complete")=>{
     if(!snapshot)return;
     setError("");
     if(action==="clock-in"){setSelection({key:action,code:"ACT-CLOCKIN",label:"上班 / Sign In"});return}
-    if(action==="clock-out"){setSelection({key:action,code:"ACT-OUT",label:"下班 / Sign Out",confirmMessage:`确定为 ${snapshot.employee.name} Sign Out？当前工作计时也会同时结束。`});return}
+    if(action==="clock-out"){setSelection({key:action,code:"ACT-OUT",label:"下班 / Sign Out"});return}
     if(!currentLeadWave){setError("当前没有可完结的负责人波次");return}
     setSelection({key:action,code:"ACT-WAVE-COMPLETE",label:`完结 ${currentLeadWave.waveNo??currentLeadWave.code}`,extra:{completeProjectId:currentLeadWave.id},confirmMessage:`确定完结波次 ${currentLeadWave.waveNo??currentLeadWave.code}？`});
   },[currentLeadWave,snapshot]);
@@ -90,7 +93,7 @@ export default function ScanPage({titleTarget,initialBadge}:{titleTarget:HTMLDiv
         <div className="time-card-title"><div><h3>当前状态</h3><p>系统时间为美东时间</p></div><span className={`time-state ${snapshot?.state??"off"}`}>{snapshot?stateLabel(snapshot.state):"等待员工"}</span></div>
         <dl><div><dt>Sign In</dt><dd>{snapshot?formatClock(snapshot.shift?.clockIn):"—"}</dd></div><div><dt>今日在岗</dt><dd>{snapshot?formatDurationWithSeconds(snapshot.today.onDutyMs):"—"}</dd></div><div><dt>今日工作</dt><dd>{snapshot?formatDurationWithSeconds(snapshot.today.productiveMs):"—"}</dd></div></dl>
         <div className="time-current-employee"><small>姓名</small><b>{snapshot?.employee.name??"扫描员工后显示"}</b></div>
-        <div className="time-current-task"><small>当前任务</small><b>{snapshot?.currentProject?`${snapshot.currentProject.code} · ${snapshot.currentProject.name}`:snapshot?"暂无任务":"扫描员工后显示"}</b>{snapshot?.currentProject?.assignmentRole&&<span>{snapshot.currentProject.assignmentRole==="lead"?"主负责人":"协作人员"}</span>}</div>
+        <div className="time-current-task"><small>当前任务</small><b>{snapshot?.currentProject?`${snapshot.currentProject.code} · ${snapshot.currentProject.name}`:snapshot?"暂无任务":"扫描员工后显示"}</b>{snapshot?.currentProject?.assignmentRole?<span>{snapshot.currentProject.assignmentRole==="lead"?"主负责人":"协作人员"}</span>:snapshot?.currentProject?.workType==="standard"&&snapshot.state!=="working"?<span>已暂停</span>:null}</div>
         <div className="time-button-row"><button className={`time-success${selection?.key==="clock-in"?" selected":""}`} aria-pressed={selection?.key==="clock-in"} disabled={pending||!snapshot||Boolean(snapshot.shift)} onClick={()=>selectAction("clock-in")}>上班 / Sign In</button><button className={`time-danger${selection?.key==="clock-out"?" selected":""}`} aria-pressed={selection?.key==="clock-out"} disabled={pending||!snapshot?.shift} onClick={()=>selectAction("clock-out")}>下班 / Sign Out</button><button className={`time-warning${selection?.key==="complete"?" selected":""}`} aria-pressed={selection?.key==="complete"} disabled={pending||!currentLeadWave||!snapshot?.shift} onClick={()=>selectAction("complete")}>完结当前波次</button></div>
         <button className="time-confirm-button" type="button" disabled={pending||!selection} onClick={confirmSelection}><b>确认 / CONFIRM</b><span>{selection?.label??"请先选择操作或任务"}</span></button>
         <div className="time-current-history"><div><b>今日记录</b>{snapshot&&<span>{employeeOperations.length} 条</span>}</div>{snapshot?(employeeOperations.length?<ul>{employeeOperations.map(item=><li key={item.id}><time>{formatClockWithSeconds(item.time)}</time><span>{item.message}</span></li>)}</ul>:<p>今天尚无操作记录</p>):<p>扫描员工后显示当天记录</p>}</div>
@@ -102,7 +105,7 @@ export default function ScanPage({titleTarget,initialBadge}:{titleTarget:HTMLDiv
       </section>
     </div>
 
-    <section className="time-card time-scan-log"><div className="time-card-title"><div><h3>今日操作</h3><p>显示今天全部扫码台操作，共 {workItems?.todayOperations.length??0} 条</p></div></div>{workItems?.todayOperations.length?<ul>{workItems.todayOperations.map(item=><li key={item.id} className={item.tone}><time>{formatClockWithSeconds(item.time)}</time><b>{item.employeeName}</b><span>{item.message}</span><small>{item.operator}</small></li>)}</ul>:<p className="time-empty">今天尚无操作记录</p>}</section>
+    <section className="time-card time-scan-log"><div className="time-card-title"><div><h3>今日操作</h3><p>显示今天全部操作记录，共 {workItems?.todayOperations.length??0} 条</p></div></div>{workItems?.todayOperations.length?<ul>{workItems.todayOperations.map(item=><li key={item.id} className={item.tone}><time>{formatClockWithSeconds(item.time)}</time><b>{item.employeeName}</b><span>{item.message}</span><small>{item.operator}</small></li>)}</ul>:<p className="time-empty">今天尚无操作记录</p>}</section>
   </div>;
 }
 

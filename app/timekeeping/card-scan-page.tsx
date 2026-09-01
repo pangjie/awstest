@@ -1,0 +1,137 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { IScannerControls } from "@zxing/browser";
+import { isValidEmployeeId, sanitizeEmployeeId } from "@/lib/timekeeping/employee-id";
+import { timeApi } from "./api";
+import { buildDailyTimelineRows, type DailyTimelineRow } from "./daily-timeline";
+import type { CardScanEmployeeResponse, ScanResponse } from "./types";
+import { WaveChannelTag, WaveTypeTag } from "./wave-display";
+
+type AttendanceAction="sign_in"|"sign_out";
+
+export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
+  const [report,setReport]=useState<CardScanEmployeeResponse|null>(null);
+  const [selection,setSelection]=useState<AttendanceAction|null>(null);
+  const [cameraOpen,setCameraOpen]=useState(false);
+  const [loading,setLoading]=useState(false);
+  const [submitting,setSubmitting]=useState(false);
+  const [error,setError]=useState("");
+  const [notice,setNotice]=useState("");
+  const [now,setNow]=useState(Date.now);
+  const videoRef=useRef<HTMLVideoElement>(null);
+  const controlsRef=useRef<IScannerControls|null>(null);
+  const scanningRef=useRef(false);
+  const scanTimeoutRef=useRef<number|null>(null);
+
+  const disposeCamera=useCallback(()=>{
+    scanningRef.current=false;
+    controlsRef.current?.stop();
+    controlsRef.current=null;
+    if(scanTimeoutRef.current!==null){window.clearTimeout(scanTimeoutRef.current);scanTimeoutRef.current=null}
+    const stream=videoRef.current?.srcObject;
+    if(stream instanceof MediaStream)stream.getTracks().forEach(track=>track.stop());
+    if(videoRef.current)videoRef.current.srcObject=null;
+  },[]);
+  const closeCamera=useCallback(()=>{disposeCamera();setCameraOpen(false)},[disposeCamera]);
+
+  useEffect(()=>{const interval=window.setInterval(()=>setNow(Date.now()),1_000);return()=>window.clearInterval(interval)},[]);
+  useEffect(()=>()=>disposeCamera(),[disposeCamera]);
+
+  const loadEmployee=useCallback(async(badge:string)=>{
+    setLoading(true);setError("");setNotice("");setSelection(null);
+    try{
+      const query=new URLSearchParams({badge});
+      setReport(await timeApi<CardScanEmployeeResponse>(`/api/v1/timekeeping/card-scan?${query.toString()}`));
+    }catch(loadError){setReport(null);setError(loadError instanceof Error?loadError.message:"员工信息读取失败")}
+    finally{setLoading(false)}
+  },[]);
+
+  const startCamera=useCallback(async()=>{
+    if(scanningRef.current||loading||submitting)return;
+    if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){setError("摄像头扫描需要使用 HTTPS，并允许浏览器访问摄像头");return}
+    setError("");setNotice("");setCameraOpen(true);scanningRef.current=true;
+    try{
+      const {BrowserMultiFormatReader}=await import("@zxing/browser");
+      const reader=new BrowserMultiFormatReader(undefined,{delayBetweenScanAttempts:100,delayBetweenScanSuccess:500});
+      const controls=await reader.decodeFromConstraints({audio:false,video:{facingMode:{ideal:"user"},width:{ideal:1280},height:{ideal:720}}},videoRef.current??undefined,(result,scanError,activeControls)=>{
+        if(scanError&&!result)return;
+        if(!result||!scanningRef.current)return;
+        const badge=sanitizeEmployeeId(result.getText());
+        if(!isValidEmployeeId(badge)){setError("扫描内容不是有效的员工工卡，请对准员工 ID 条码或二维码");return}
+        scanningRef.current=false;
+        activeControls.stop();
+        closeCamera();
+        void loadEmployee(badge);
+      });
+      if(scanningRef.current){controlsRef.current=controls;scanTimeoutRef.current=window.setTimeout(()=>{closeCamera();setError("未识别到员工工卡，请重新扫描")},30_000)}
+      else controls.stop();
+    }catch(cameraError){
+      closeCamera();
+      setError(cameraErrorMessage(cameraError));
+    }
+  },[closeCamera,loadEmployee,loading,submitting]);
+
+  const confirm=useCallback(async()=>{
+    if(!report||!selection||submitting)return;
+    setSubmitting(true);setError("");setNotice("");
+    const label=selection==="sign_in"?"Sign In":"Sign Out";
+    try{
+      await timeApi<ScanResponse>("/api/v1/timekeeping/card-scan",{method:"POST",body:JSON.stringify({code:selection==="sign_in"?"ACT-CLOCKIN":"ACT-OUT",employeeId:report.snapshot.employee.id,requestId:crypto.randomUUID()})});
+      setReport(null);setSelection(null);setNotice(`${label} 已提交，请扫描下一位员工`);
+    }catch(submitError){setError(submitError instanceof Error?submitError.message:`${label} 失败`)}
+    finally{setSubmitting(false)}
+  },[report,selection,submitting]);
+
+  const timelineRows=useMemo(()=>report?buildDailyTimelineRows(report,report.workDate,now):[],[now,report]);
+  const onDuty=Boolean(report?.snapshot.shift);
+
+  if(!portableDevice)return <div className="time-page time-card-scan-unavailable"><div><span>▣</span><h2>工卡扫描仅供移动终端使用</h2><p>请使用 iPhone、iPad 或其他带摄像头的触控终端打开本页面。</p></div></div>;
+
+  return <div className="time-page time-card-scan-page" aria-label="工卡扫描">
+    <section className={`time-card-camera${cameraOpen?" active":""}`}>
+      <div className="time-card-camera-view">
+        <video ref={videoRef} autoPlay muted playsInline aria-label="工卡扫描摄像头画面"/>
+        {!cameraOpen&&<div className="time-card-camera-placeholder"><span>▣</span><b>{loading?"正在读取员工信息":"点击扫描开启摄像头"}</b></div>}
+        {cameraOpen&&<div className="time-card-camera-frame" aria-hidden="true"><i/><i/><i/><i/><span/></div>}
+      </div>
+      <button type="button" className="time-card-scan-button" disabled={cameraOpen||loading||submitting} onClick={()=>void startCamera()}><span>⌁</span><b>{cameraOpen?"扫描中":"扫描"}</b></button>
+    </section>
+
+    <section className="time-card-scan-identity" aria-live="polite">
+      <span>姓名</span>
+      <strong>{loading?"读取中…":report?.snapshot.employee.name??"尚未识别员工"}</strong>
+    </section>
+
+    <section className="time-card-scan-actions" aria-label="考勤操作">
+      <button type="button" className={`sign-in${selection==="sign_in"?" selected":""}`} aria-pressed={selection==="sign_in"} disabled={!report||onDuty||report.snapshot.state==="inactive"||submitting} onClick={()=>setSelection("sign_in")}><b>Sign In</b></button>
+      <button type="button" className={`sign-out${selection==="sign_out"?" selected":""}`} aria-pressed={selection==="sign_out"} disabled={!report||!onDuty||submitting} onClick={()=>setSelection("sign_out")}><b>Sign Out</b></button>
+      <button type="button" className="confirm" disabled={!report||!selection||submitting} onClick={()=>void confirm()}><b>{submitting?"提交中":"Confirm"}</b></button>
+    </section>
+
+    {error&&<div className="time-card-scan-message error" role="alert">{error}</div>}
+    {notice&&<div className="time-card-scan-message success" role="status">{notice}</div>}
+
+    <section className="time-card-scan-timeline">
+      <div><span>当天处理内容</span><b>{report?`${report.workDate} · ${timelineRows.length} 条`:"扫描员工后显示"}</b></div>
+      {report?(timelineRows.length?<div className="time-card-scan-timeline-list">{timelineRows.map(row=><MobileTimelineRow key={row.id} row={row}/>)}</div>:<p>今天没有考勤或工作记录</p>):<p>员工的 Sign In、Sign Out 和工作内容会显示在这里</p>}
+    </section>
+  </div>;
+}
+
+function MobileTimelineRow({row}:{row:DailyTimelineRow}){
+  return <article className={row.kind}><div><strong>{row.nature}</strong>{row.waveNo&&<code>{row.waveNo}</code>}<time>{row.clock}</time></div><MobileTimelineContent row={row}/>{row.duration&&<b>{row.duration}</b>}</article>;
+}
+
+function MobileTimelineContent({row}:{row:DailyTimelineRow}){
+  if(!row.project||row.project.workType!=="wave")return <p>{row.content}</p>;
+  return <p className="time-card-scan-wave"><span><WaveChannelTag value={row.project.channelName}/><WaveTypeTag value={row.project.channelType}/></span><em>{row.content}</em></p>;
+}
+
+function cameraErrorMessage(error:unknown){
+  const name=error instanceof DOMException?error.name:"";
+  if(name==="NotAllowedError"||name==="SecurityError")return "摄像头权限未开启，请在浏览器设置中允许本网站使用摄像头";
+  if(name==="NotFoundError"||name==="OverconstrainedError")return "没有找到可用的后置摄像头";
+  if(name==="NotReadableError"||name==="AbortError")return "摄像头正被其他应用占用，请关闭其他应用后重试";
+  return "摄像头启动失败，请检查浏览器权限后重试";
+}
