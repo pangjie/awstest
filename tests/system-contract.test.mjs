@@ -260,9 +260,14 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   const timekeepingCss=await read("app/timekeeping.css");
   const recordsPage=await read("app/timekeeping/records-page.tsx");
   assert.match(cardScanPage,/BrowserMultiFormatReader/);
-  assert.match(cardScanPage,/decodeFromConstraints/);
+  assert.match(cardScanPage,/navigator\.mediaDevices\.getUserMedia/);
+  assert.match(cardScanPage,/reader\.possibleFormats=\[BarcodeFormat\.QR_CODE,BarcodeFormat\.CODE_128\]/);
+  assert.match(cardScanPage,/reader\.decodeFromCanvas\(decodeCanvas\)/);
+  assert.match(cardScanPage,/SCAN_REGIONS[\s\S]*Math\.PI\/15/);
+  assert.match(cardScanPage,/frameSharpness\(video,analysisCanvas\)/);
+  assert.match(cardScanPage,/focusMode\?\.includes\("continuous"\)/);
+  assert.match(cardScanPage,/advanced\.zoom=stepAligned/);
   assert.match(cardScanPage,/facingMode:\{ideal:"user"\}/);
-  assert.match(cardScanPage,/activeControls\.stop\(\)/);
   assert.match(cardScanPage,/setReport\(null\);setSelection\(null\);setNotice/);
   for(const label of ["扫描","Sign In","Sign Out","Confirm","姓名","当天处理内容"])assert.match(cardScanPage,new RegExp(label));
   assert.doesNotMatch(cardScanPage,/className="time-card-scan-heading"|<span>IN<\/span>|<span>OUT<\/span>|<span>✓<\/span>/);
@@ -279,6 +284,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(timekeepingCss,/\.app-shell\.portable-device\.mobile-card-mode \.workspace \{ width: 100%; margin-left: 0; \}/);
   assert.match(timekeepingCss,/\.time-card-scan-actions \{[^}]*grid-template-columns: repeat\(2,minmax\(0,1fr\)\);/s);
   assert.match(timekeepingCss,/\.time-card-scan-actions \.confirm \{[^}]*grid-column: 1\/-1;/s);
+  assert.match(timekeepingCss,/\.time-card-camera\.active video \{ transform: scaleX\(-1\); \}/);
   assert.doesNotMatch(timekeepingCss,/\.time-card-scan-heading/);
   assert.match(timekeepingCss,/\.time-card-scan-actions button \{[^}]*min-height: 92px;/s);
   assert.match(timekeepingCss,/\.time-card-scan-identity strong \{[^}]*font-size: clamp\(34px,7vw,52px\);/s);

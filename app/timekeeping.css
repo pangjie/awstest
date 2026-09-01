@@ -485,6 +485,7 @@ button:disabled { cursor: default; opacity: .48; }
 .time-card-camera-view { position: relative; min-height: 170px; overflow: hidden; border: 2px solid #cad5e4; border-radius: 15px; background: #101827; box-shadow: 0 8px 25px #17213617; }
 .time-card-camera.active .time-card-camera-view { border-color: #5b85d6; box-shadow: 0 0 0 4px #3568d41c,0 10px 30px #17213624; }
 .time-card-camera video { display: block; width: 100%; height: 100%; min-height: 170px; max-height: 290px; object-fit: cover; }
+.time-card-camera.active video { transform: scaleX(-1); }
 .time-card-camera-placeholder { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 7px; background: linear-gradient(145deg,#172136,#0d1728); color: #b8c6d9; }
 .time-card-camera-placeholder span { color: #72a0fb; font-size: 38px; }
 .time-card-camera-placeholder b { font-size: 15px; }
