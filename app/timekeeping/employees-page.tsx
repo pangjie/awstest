@@ -1,20 +1,17 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { fetchWithTimeout } from "@/lib/client-fetch";
 import { timeApi } from "./api";
 import { formatClock, formatDuration, stateLabel } from "./format";
-import type { EmployeeRecord, EmployeesResponse } from "./types";
+import type { EmployeeRecord, EmployeeSortKey, EmployeeSortState, EmployeesResponse } from "./types";
 
-type SortKey="badgeCode"|"name"|"type"|"todayOffDutyMs"|"todayMs"|"attendanceState";
-
-export default function EmployeesPage({titleTarget,isAdmin,openRecords,openScan}:{titleTarget:HTMLDivElement|null;isAdmin:boolean;openRecords?:((badge:string)=>void);openScan?:((badge:string)=>void)}){
+export default function EmployeesPage({titleTarget,isAdmin,openRecords,openScan,sortState,setSortState}:{titleTarget:HTMLDivElement|null;isAdmin:boolean;openRecords?:((badge:string)=>void);openScan?:((badge:string)=>void);sortState:EmployeeSortState;setSortState:Dispatch<SetStateAction<EmployeeSortState>>}){
   const [data,setData]=useState<EmployeesResponse|null>(null);
   const [query,setQuery]=useState("");
   const [status,setStatus]=useState("active");
-  const [sort,setSort]=useState<SortKey>("badgeCode");
-  const [descending,setDescending]=useState(false);
+  const {key:sort,descending}=sortState;
   const [adding,setAdding]=useState(false);
   const [editing,setEditing]=useState<EmployeeRecord|null>(null);
   const [pendingAction,setPendingAction]=useState<string|null>(null);
@@ -24,11 +21,13 @@ export default function EmployeesPage({titleTarget,isAdmin,openRecords,openScan}
   useEffect(()=>{let cancelled=false;void timeApi<EmployeesResponse>("/api/v1/timekeeping/employees").then(next=>{if(!cancelled){setData(next);setError("")}}).catch(loadError=>{if(!cancelled)setError(loadError instanceof Error?loadError.message:"员工数据读取失败")});return()=>{cancelled=true}},[]);
   const rows=useMemo(()=>{
     const needle=query.trim().toLowerCase();
-    return [...(data?.employees??[])].filter(row=>(status==="all"||status==="active"&&row.active||status==="inactive"&&!row.active)&&(!needle||`${row.badgeCode} ${row.name} ${row.type}`.toLowerCase().includes(needle))).sort((a,b)=>{
-      const left=a[sort],right=b[sort];const result=typeof left==="number"&&typeof right==="number"?left-right:String(left).localeCompare(String(right),"zh-CN");return descending?-result:result;
-    });
+    return (data?.employees??[]).filter(row=>(status==="all"||status==="active"&&row.active||status==="inactive"&&!row.active)&&(!needle||`${row.badgeCode} ${row.name} ${row.type}`.toLowerCase().includes(needle))).map((row,index)=>({row,index})).sort((leftRow,rightRow)=>{
+      const left=employeeSortValue(leftRow.row,sort),right=employeeSortValue(rightRow.row,sort);
+      const result=typeof left==="number"&&typeof right==="number"?left-right:String(left).localeCompare(String(right),"zh-CN");
+      return (descending?-result:result)||leftRow.index-rightRow.index;
+    }).map(item=>item.row);
   },[data,descending,query,sort,status]);
-  const changeSort=(key:SortKey)=>{if(sort===key)setDescending(value=>!value);else{setSort(key);setDescending(false)}};
+  const changeSort=(key:EmployeeSortKey)=>setSortState(current=>current.key===key?{key,descending:!current.descending}:{key,descending:false});
   const toggle=async(employee:EmployeeRecord)=>{if(employee.active&&!window.confirm(`确定停用 ${employee.name}？`))return;setError("");try{await timeApi("/api/v1/timekeeping/employees",{method:"PATCH",body:JSON.stringify({id:employee.id,active:!employee.active})});await load()}catch(saveError){setError(saveError instanceof Error?saveError.message:"员工状态更新失败")}};
   const attendanceAction=async(employee:EmployeeRecord,action:"sign_in"|"sign_out")=>{
     if(action==="sign_out"&&!window.confirm(`确定为 ${employee.name} Sign Out？当前工作计时也会同时结束。`))return;
@@ -56,7 +55,7 @@ export default function EmployeesPage({titleTarget,isAdmin,openRecords,openScan}
   return <div className="time-page time-employees-page">
     {titleTarget&&createPortal(<div className="time-employee-titlebar"><div className="time-employee-title-filters"><label><span>搜索</span><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="员工 ID、姓名或组织" aria-label="搜索员工"/></label><label><span>状态</span><select value={status} onChange={event=>setStatus(event.target.value)} aria-label="员工状态"><option value="active">在职</option><option value="inactive">已停用</option><option value="all">全部</option></select></label><p>共 {rows.length} 名员工</p></div><div className="time-employee-title-actions">{isAdmin&&<button className="time-secondary" disabled={exporting||!data?.employees.length} onClick={()=>void exportScanAssets()}>{exporting?"正在生成…":"导出扫描素材"}</button>}<button className="primary" onClick={()=>setAdding(true)}>新增员工</button></div></div>,titleTarget)}
     {error&&<div className="time-error">{error}<button onClick={()=>void load()}>重试</button></div>}
-      <section className="time-card"><div className="time-table-wrap"><table className="time-table time-data-table time-employee-table"><thead><tr><th className="time-employee-actions-col">操作</th><SortHead label="员工 ID" field="badgeCode" current={sort} descending={descending} onClick={changeSort}/><SortHead label="姓名" field="name" current={sort} descending={descending} onClick={changeSort}/><SortHead label="组织" field="type" current={sort} descending={descending} onClick={changeSort}/><SortHead label="工况" field="attendanceState" current={sort} descending={descending} onClick={changeSort}/><th>最早 Sign In</th><th>最晚 Sign Out</th><SortHead label="当日不在岗" field="todayOffDutyMs" current={sort} descending={descending} onClick={changeSort}/><th>当前任务</th><SortHead label="今日在岗" field="todayMs" current={sort} descending={descending} onClick={changeSort}/></tr></thead><tbody>{rows.map(employee=>{
+      <section className="time-card"><div className="time-table-wrap"><table className="time-table time-data-table time-employee-table"><thead><tr><th className="time-employee-actions-col">操作</th><SortHead label="员工 ID" field="badgeCode" current={sort} descending={descending} onClick={changeSort}/><SortHead label="姓名" field="name" current={sort} descending={descending} onClick={changeSort}/><SortHead label="组织" field="type" current={sort} descending={descending} onClick={changeSort}/><SortHead label="工况" field="attendanceState" current={sort} descending={descending} onClick={changeSort}/><SortHead label="最早 Sign In" field="todayFirstSignIn" current={sort} descending={descending} onClick={changeSort}/><SortHead label="最晚 Sign Out" field="todayLastSignOut" current={sort} descending={descending} onClick={changeSort}/><SortHead label="当日不在岗" field="todayOffDutyMs" current={sort} descending={descending} onClick={changeSort}/><SortHead label="当前任务" field="currentProject" current={sort} descending={descending} onClick={changeSort}/><SortHead label="今日在岗" field="todayMs" current={sort} descending={descending} onClick={changeSort}/></tr></thead><tbody>{rows.map(employee=>{
         const onDuty=employee.attendanceState==="working"||employee.attendanceState==="ready";
         const rowPending=pendingAction?.startsWith(`${employee.id}:`)??false;
         return <tr key={employee.id} className={!employee.active?"disabled-row":""}><td><div className="time-row-actions time-employee-row-actions"><button className="sign-in" disabled={rowPending||!employee.active||onDuty} onClick={()=>void attendanceAction(employee,"sign_in")}>Sign In</button><button className="sign-out" disabled={rowPending||!onDuty} onClick={()=>void attendanceAction(employee,"sign_out")}>Sign Out</button><button disabled={rowPending} onClick={()=>setEditing(employee)}>编辑</button><button className={employee.active?"danger":""} disabled={rowPending} onClick={()=>void toggle(employee)}>{employee.active?"停用":"启用"}</button></div></td><td>{openScan?<button type="button" className="time-employee-scan-link" onClick={()=>openScan(employee.badgeCode)} title={`在扫描台打开 ${employee.name}`}><code>{employee.badgeCode}</code></button>:<code>{employee.badgeCode}</code>}</td><td>{openRecords?<button type="button" className="time-employee-record-link" onClick={()=>openRecords(employee.badgeCode)}><b>{employee.name}</b></button>:<b>{employee.name}</b>}</td><td>{employee.type}</td><td><span className={`time-state ${employee.attendanceState}`}>{stateLabel(employee.attendanceState)}</span></td><td className="time-number">{employee.todayFirstSignIn?formatClock(employee.todayFirstSignIn):"—"}</td><td className="time-number">{employee.todayLastSignOut?formatClock(employee.todayLastSignOut):"—"}</td><td className="time-number">{formatDuration(employee.todayOffDutyMs)}</td><td className="time-truncate" title={employee.currentProject?.name}>{employee.currentProject?.name??"—"}</td><td className="time-number">{formatDuration(employee.todayMs)}</td></tr>
@@ -66,7 +65,14 @@ export default function EmployeesPage({titleTarget,isAdmin,openRecords,openScan}
   </div>;
 }
 
-function SortHead({label,field,current,descending,onClick}:{label:string;field:SortKey;current:SortKey;descending:boolean;onClick:(key:SortKey)=>void}){return <th><button className="time-sort" onClick={()=>onClick(field)}>{label}{current===field?(descending?" ↓":" ↑"):""}</button></th>}
+function SortHead({label,field,current,descending,onClick}:{label:string;field:EmployeeSortKey;current:EmployeeSortKey;descending:boolean;onClick:(key:EmployeeSortKey)=>void}){const active=current===field;return <th aria-sort={active?(descending?"descending":"ascending"):"none"}><button className="time-sort" onClick={()=>onClick(field)}><span>{label}</span><i aria-hidden="true">{active?(descending?"↓":"↑"):""}</i></button></th>}
+
+function employeeSortValue(employee:EmployeeRecord,key:EmployeeSortKey):string|number{
+  if(key==="attendanceState")return stateLabel(employee.attendanceState);
+  if(key==="todayFirstSignIn"||key==="todayLastSignOut")return employee[key]?new Date(employee[key]).getTime():-1;
+  if(key==="currentProject")return employee.currentProject?.name??"";
+  return employee[key];
+}
 
 function AddEmployeesModal({close,saved}:{close:()=>void;saved:()=>Promise<void>}){
   const [names,setNames]=useState("");const [type,setType]=useState<"OZM"|"JJC">("OZM");const [error,setError]=useState("");const [pending,setPending]=useState(false);
