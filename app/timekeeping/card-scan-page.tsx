@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { IScannerControls } from "@zxing/browser";
 import { isValidEmployeeId, sanitizeEmployeeId } from "@/lib/timekeeping/employee-id";
 import { timeApi } from "./api";
 import { buildDailyTimelineRows, type DailyTimelineRow } from "./daily-timeline";
@@ -9,6 +8,18 @@ import type { CardScanEmployeeResponse, ScanResponse } from "./types";
 import { WaveChannelTag, WaveTypeTag } from "./wave-display";
 
 type AttendanceAction="sign_in"|"sign_out";
+type ScanRegion={scale:number;aspectRatio:number|null;rotation:number};
+type CameraCapabilities=MediaTrackCapabilities&{focusMode?:string[];zoom?:{min:number;max:number;step?:number}};
+type CameraConstraintSet=MediaTrackConstraintSet&{focusMode?:string;zoom?:number};
+
+const SCAN_INTERVAL_MS=55;
+const SCAN_REGIONS:ScanRegion[]=[
+  {scale:.55,aspectRatio:1,rotation:0},
+  {scale:.82,aspectRatio:1.8,rotation:0},
+  {scale:1,aspectRatio:null,rotation:0},
+  {scale:.86,aspectRatio:1.8,rotation:Math.PI/15},
+  {scale:.86,aspectRatio:1.8,rotation:-Math.PI/15},
+];
 
 export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
   const [report,setReport]=useState<CardScanEmployeeResponse|null>(null);
@@ -20,17 +31,17 @@ export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
   const [notice,setNotice]=useState("");
   const [now,setNow]=useState(Date.now);
   const videoRef=useRef<HTMLVideoElement>(null);
-  const controlsRef=useRef<IScannerControls|null>(null);
+  const streamRef=useRef<MediaStream|null>(null);
   const scanningRef=useRef(false);
+  const scanLoopRef=useRef<number|null>(null);
   const scanTimeoutRef=useRef<number|null>(null);
 
   const disposeCamera=useCallback(()=>{
     scanningRef.current=false;
-    controlsRef.current?.stop();
-    controlsRef.current=null;
+    if(scanLoopRef.current!==null){window.clearTimeout(scanLoopRef.current);scanLoopRef.current=null}
     if(scanTimeoutRef.current!==null){window.clearTimeout(scanTimeoutRef.current);scanTimeoutRef.current=null}
-    const stream=videoRef.current?.srcObject;
-    if(stream instanceof MediaStream)stream.getTracks().forEach(track=>track.stop());
+    streamRef.current?.getTracks().forEach(track=>track.stop());
+    streamRef.current=null;
     if(videoRef.current)videoRef.current.srcObject=null;
   },[]);
   const closeCamera=useCallback(()=>{disposeCamera();setCameraOpen(false)},[disposeCamera]);
@@ -52,20 +63,45 @@ export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
     if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){setError("摄像头扫描需要使用 HTTPS，并允许浏览器访问摄像头");return}
     setError("");setNotice("");setCameraOpen(true);scanningRef.current=true;
     try{
-      const {BrowserMultiFormatReader}=await import("@zxing/browser");
-      const reader=new BrowserMultiFormatReader(undefined,{delayBetweenScanAttempts:100,delayBetweenScanSuccess:500});
-      const controls=await reader.decodeFromConstraints({audio:false,video:{facingMode:{ideal:"user"},width:{ideal:1280},height:{ideal:720}}},videoRef.current??undefined,(result,scanError,activeControls)=>{
-        if(scanError&&!result)return;
-        if(!result||!scanningRef.current)return;
-        const badge=sanitizeEmployeeId(result.getText());
-        if(!isValidEmployeeId(badge)){setError("扫描内容不是有效的员工工卡，请对准员工 ID 条码或二维码");return}
-        scanningRef.current=false;
-        activeControls.stop();
-        closeCamera();
-        void loadEmployee(badge);
-      });
-      if(scanningRef.current){controlsRef.current=controls;scanTimeoutRef.current=window.setTimeout(()=>{closeCamera();setError("未识别到员工工卡，请重新扫描")},30_000)}
-      else controls.stop();
+      const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"user"},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}}});
+      if(!scanningRef.current){stream.getTracks().forEach(track=>track.stop());return}
+      streamRef.current=stream;
+      const video=videoRef.current;
+      if(!video)throw new Error("摄像头画面尚未准备好");
+      video.srcObject=stream;
+      await optimizeCameraTrack(stream.getVideoTracks()[0]);
+      await video.play();
+
+      const {BarcodeFormat,BrowserMultiFormatReader}=await import("@zxing/browser");
+      const reader=new BrowserMultiFormatReader();
+      reader.possibleFormats=[BarcodeFormat.QR_CODE,BarcodeFormat.CODE_128];
+      const analysisCanvas=document.createElement("canvas");
+      const decodeCanvas=document.createElement("canvas");
+      let regionIndex=0;
+      let recentSharpness=0;
+
+      const scanFrame=()=>{
+        if(!scanningRef.current)return;
+        if(video.readyState<HTMLMediaElement.HAVE_CURRENT_DATA){scanLoopRef.current=window.setTimeout(scanFrame,SCAN_INTERVAL_MS);return}
+        const sharpness=frameSharpness(video,analysisCanvas);
+        recentSharpness=Math.max(sharpness,recentSharpness*.96);
+        if(sharpness>=6&&sharpness>=recentSharpness*.5){
+          drawScanRegion(video,decodeCanvas,SCAN_REGIONS[regionIndex]);
+          regionIndex=(regionIndex+1)%SCAN_REGIONS.length;
+          try{
+            const badge=sanitizeEmployeeId(reader.decodeFromCanvas(decodeCanvas).getText());
+            if(isValidEmployeeId(badge)){
+              closeCamera();
+              void loadEmployee(badge);
+              return;
+            }
+            setError("扫描内容不是有效的员工工卡，请对准员工 ID 条码或二维码");
+          }catch{/* 当前区域没有可识别工卡，继续读取下一帧。 */}
+        }
+        scanLoopRef.current=window.setTimeout(scanFrame,SCAN_INTERVAL_MS);
+      };
+      scanFrame();
+      if(scanningRef.current)scanTimeoutRef.current=window.setTimeout(()=>{closeCamera();setError("未识别到员工工卡，请重新扫描")},30_000);
     }catch(cameraError){
       closeCamera();
       setError(cameraErrorMessage(cameraError));
@@ -131,7 +167,74 @@ function MobileTimelineContent({row}:{row:DailyTimelineRow}){
 function cameraErrorMessage(error:unknown){
   const name=error instanceof DOMException?error.name:"";
   if(name==="NotAllowedError"||name==="SecurityError")return "摄像头权限未开启，请在浏览器设置中允许本网站使用摄像头";
-  if(name==="NotFoundError"||name==="OverconstrainedError")return "没有找到可用的后置摄像头";
+  if(name==="NotFoundError"||name==="OverconstrainedError")return "没有找到可用的摄像头";
   if(name==="NotReadableError"||name==="AbortError")return "摄像头正被其他应用占用，请关闭其他应用后重试";
   return "摄像头启动失败，请检查浏览器权限后重试";
+}
+
+async function optimizeCameraTrack(track:MediaStreamTrack|undefined){
+  if(!track?.getCapabilities)return;
+  const capabilities=track.getCapabilities() as CameraCapabilities;
+  const advanced:CameraConstraintSet={};
+  if(capabilities.focusMode?.includes("continuous"))advanced.focusMode="continuous";
+  if(capabilities.zoom&&capabilities.zoom.max>capabilities.zoom.min){
+    const target=Math.min(capabilities.zoom.max,Math.max(capabilities.zoom.min,1.15));
+    advanced.zoom=stepAligned(target,capabilities.zoom);
+  }
+  if(!Object.keys(advanced).length)return;
+  try{await track.applyConstraints({advanced:[advanced]})}
+  catch{/* 摄像头报告的可选能力在部分浏览器中仍可能拒绝应用，保留默认设置继续扫描。 */}
+}
+
+function stepAligned(value:number,range:{min:number;max:number;step?:number}){
+  if(!range.step)return value;
+  const steps=Math.round((value-range.min)/range.step);
+  return Math.min(range.max,Math.max(range.min,range.min+steps*range.step));
+}
+
+function frameSharpness(video:HTMLVideoElement,canvas:HTMLCanvasElement){
+  const width=128;
+  const height=Math.max(72,Math.round(width*video.videoHeight/video.videoWidth));
+  canvas.width=width;canvas.height=height;
+  const context=canvas.getContext("2d",{willReadFrequently:true});
+  if(!context)return Number.POSITIVE_INFINITY;
+  context.drawImage(video,0,0,width,height);
+  const pixels=context.getImageData(0,0,width,height).data;
+  let sum=0;let squared=0;let count=0;
+  for(let y=1;y<height-1;y+=2){
+    for(let x=1;x<width-1;x+=2){
+      const center=gray(pixels,(y*width+x)*4);
+      const laplacian=4*center-gray(pixels,(y*width+x-1)*4)-gray(pixels,(y*width+x+1)*4)-gray(pixels,((y-1)*width+x)*4)-gray(pixels,((y+1)*width+x)*4);
+      sum+=laplacian;squared+=laplacian*laplacian;count++;
+    }
+  }
+  const mean=sum/count;
+  return squared/count-mean*mean;
+}
+
+function gray(pixels:Uint8ClampedArray,index:number){return pixels[index]*.299+pixels[index+1]*.587+pixels[index+2]*.114}
+
+function drawScanRegion(video:HTMLVideoElement,canvas:HTMLCanvasElement,region:ScanRegion){
+  const availableWidth=video.videoWidth*region.scale;
+  const availableHeight=video.videoHeight*region.scale;
+  let sourceWidth=availableWidth;
+  let sourceHeight=availableHeight;
+  if(region.aspectRatio!==null){
+    if(availableWidth/availableHeight>region.aspectRatio)sourceWidth=availableHeight*region.aspectRatio;
+    else sourceHeight=availableWidth/region.aspectRatio;
+  }
+  const sourceX=(video.videoWidth-sourceWidth)/2;
+  const sourceY=(video.videoHeight-sourceHeight)/2;
+  const scale=Math.min(1024/sourceWidth,1024/sourceHeight);
+  const width=Math.max(1,Math.round(sourceWidth*scale));
+  const height=Math.max(1,Math.round(sourceHeight*scale));
+  canvas.width=width;canvas.height=height;
+  const context=canvas.getContext("2d");
+  if(!context)return;
+  context.imageSmoothingEnabled=region.rotation!==0;
+  if(region.rotation!==0)context.imageSmoothingQuality="high";
+  context.fillStyle="#fff";context.fillRect(0,0,width,height);
+  context.save();context.translate(width/2,height/2);context.rotate(region.rotation);
+  context.drawImage(video,sourceX,sourceY,sourceWidth,sourceHeight,-width/2,-height/2,width,height);
+  context.restore();
 }
