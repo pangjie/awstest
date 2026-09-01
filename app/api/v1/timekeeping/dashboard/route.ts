@@ -7,5 +7,5 @@ export const dynamic="force-dynamic";
 export async function GET(request:NextRequest){
   const access=await authorizePageAccess("time-dashboard");
   if(!access.authorized)return NextResponse.json({ok:false,error:access.message},{status:access.status});
-  return NextResponse.json(await readDashboard(request.nextUrl.searchParams.get("date"),request.nextUrl.searchParams.get("range")),{headers:{"cache-control":"no-store"}});
+  return NextResponse.json(await readDashboard(request.nextUrl.searchParams.get("startDate"),request.nextUrl.searchParams.get("endDate")),{headers:{"cache-control":"no-store"}});
 }

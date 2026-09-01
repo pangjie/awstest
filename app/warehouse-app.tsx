@@ -12,11 +12,11 @@ import { normalizeSkuCatalogRow, validateSkuCatalogHeaders } from "@/lib/sku-cat
 import { printWarehouseTaskSheet } from "@/lib/task-sheet-pdf";
 import { normalizeWarehouseLedgerRow, validateWarehouseLedgerHeaders, validateWarehouseLedgerRows, WAREHOUSE_LEDGER_HEADERS, WAREHOUSE_LEDGER_HISTORY_SHEET } from "@/lib/warehouse-ledger-excel";
 import { formatWarehouseDateTimeFixed, formatWarehouseTime, parseStoredTimestamp, previousWarehouseDateKey, toWarehouseDateTimeInput, warehouseDateKey, warehouseDateTimeInputToIso } from "@/lib/warehouse-time";
-import { DASHBOARD_RANGES, dashboardRangeLabel, type DashboardRangeId } from "@/lib/timekeeping/dashboard-range";
 import { addDays } from "@/lib/timekeeping/time";
 import BrandMark from "./brand-mark";
 import { currentDate } from "./timekeeping/format";
 import TimekeepingModule from "./timekeeping/timekeeping-module";
+import type { DashboardFilters, EmployeeSortState } from "./timekeeping/types";
 
 type Role="admin"|"manager"|"operator";
 type SessionUser={id:number;username:string;name:string;role:Role;pagePermissions:PageKey[]};
@@ -198,7 +198,10 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
   const [timeScanBadge,setTimeScanBadge]=useState("");
   const [timeRecordBadge,setTimeRecordBadge]=useState("");
   const [timeDashboardDate,setTimeDashboardDate]=useState(currentDate);
-  const [timeDashboardRange,setTimeDashboardRange]=useState<DashboardRangeId>("1d");
+  const [timeDashboardExportStartDate,setTimeDashboardExportStartDate]=useState(currentDate);
+  const [timeDashboardExportEndDate,setTimeDashboardExportEndDate]=useState(currentDate);
+  const [timeDashboardFilters,setTimeDashboardFilters]=useState<DashboardFilters>({channel:[],type:[],state:[],employee:[]});
+  const [timeEmployeeSort,setTimeEmployeeSort]=useState<EmployeeSortState>({key:"name",descending:false});
   const [timeDashboardExportKey,setTimeDashboardExportKey]=useState(0);
   const [timeDashboardImportOpen,setTimeDashboardImportOpen]=useState(false);
   const [timekeepingTitleTarget,setTimekeepingTitleTarget]=useState<HTMLDivElement|null>(null);
@@ -360,7 +363,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
       </div>
     </aside>
     <section className="workspace" data-page={active}>
-      {active!=="备货操作"&&<header><div className="workspace-title"><h1>{active}</h1></div><div className="workspace-title-tools" ref={setTimekeepingTitleTarget}>{activeTimekeepingPage==="time-dashboard"&&<div className="time-dashboard-title-actions"><button className="primary" type="button" onClick={()=>setTimeDashboardImportOpen(true)}>导入波次</button><button className="time-dashboard-current" type="button" onClick={()=>{setTimeDashboardDate(currentDate());setTimeDashboardRange("1d")}}>当前波次</button><label className="time-dashboard-date"><span>日期</span><div className="time-dashboard-date-nav"><button type="button" title="前一天" aria-label="前一天" onClick={()=>setTimeDashboardDate(date=>addDays(date,-1))}>‹</button><input aria-label="工作日期" type="date" value={timeDashboardDate} onChange={event=>{if(event.target.value)setTimeDashboardDate(event.target.value)}}/><button type="button" title="后一天" aria-label="后一天" onClick={()=>setTimeDashboardDate(date=>addDays(date,1))}>›</button></div></label><label className="time-dashboard-range"><span>时间段</span><select value={timeDashboardRange} onChange={event=>setTimeDashboardRange(event.target.value as DashboardRangeId)}>{DASHBOARD_RANGES.map(range=><option value={range.id} key={range.id}>{dashboardRangeLabel(timeDashboardDate,range.id)}</option>)}</select></label><button className="time-dashboard-export" type="button" onClick={()=>setTimeDashboardExportKey(key=>key+1)}>导出</button></div>}</div></header>}
+      {active!=="备货操作"&&<header><div className="workspace-title"><h1>{active}</h1></div><div className="workspace-title-tools" ref={setTimekeepingTitleTarget}>{activeTimekeepingPage==="time-dashboard"&&<div className="time-dashboard-title-actions"><button className="primary" type="button" onClick={()=>setTimeDashboardImportOpen(true)}>导入波次</button><button className="time-dashboard-current" type="button" onClick={()=>setTimeDashboardDate(currentDate())}>当前波次</button><button className="time-dashboard-day" type="button" onClick={()=>setTimeDashboardDate(date=>addDays(date,-1))}>前一天</button><button className="time-dashboard-day" type="button" onClick={()=>setTimeDashboardDate(date=>addDays(date,1))}>后一天</button><div className="time-dashboard-date-range" role="group" aria-label="导出日期范围"><label className="time-dashboard-date"><span title="仅用于导出">起始日期</span><input aria-label="导出起始日期" title="仅用于导出" type="date" value={timeDashboardExportStartDate} max={timeDashboardExportEndDate} onChange={event=>{const value=event.target.value;if(!value)return;setTimeDashboardExportStartDate(value);if(value>timeDashboardExportEndDate)setTimeDashboardExportEndDate(value)}}/></label><label className="time-dashboard-date"><span title="仅用于导出">终止日期</span><input aria-label="导出终止日期" title="仅用于导出" type="date" value={timeDashboardExportEndDate} min={timeDashboardExportStartDate} onChange={event=>{const value=event.target.value;if(!value)return;setTimeDashboardExportEndDate(value);if(value<timeDashboardExportStartDate)setTimeDashboardExportStartDate(value)}}/></label></div><button className="time-dashboard-export" type="button" onClick={()=>setTimeDashboardExportKey(key=>key+1)}>导出</button></div>}</div></header>}
       <div className="content">
         {active==="备货操作"&&<Dashboard stats={stats} tasks={pendingTaskGroups} onFlow={setModal} onTask={openTask} openTasks={()=>{setWarehouseDataTab("tasks");setWarehouseDataVisited(true);setActive("备货数据")}} data={data!} invalidSkuCodes={invalidSkuCodes} canOpenTasks={allowedPageKeys.has("tasks")} canOpenLedger={allowedPageKeys.has("warehouse-ledger")} openHistory={()=>{setLedgerEntry({tab:"history",query:""});setWarehouseDataTab("warehouse-ledger");setWarehouseDataVisited(true);setActive("备货数据")}}/>}
         {active==="备库总表"&&<ReserveTable pallets={data!.pallets} locations={data!.locations} selected={selected} setSelected={setSelected} onFlow={openFlow} notify={notify} done={async message=>{notify(message);await refresh()}} onEdit={setEditingRow} onLocation={allowedPageKeys.has("warehouse-ledger")?code=>{setLedgerEntry({tab:"location",query:code});setWarehouseDataTab("warehouse-ledger");setWarehouseDataVisited(true);setActive("备货数据")}:undefined} invalidSkuCodes={invalidSkuCodes}/>}
@@ -373,7 +376,15 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
           {allowedPageKeys.has("location-management")&&<div className="warehouse-data-panel" role="tabpanel" hidden={warehouseDataTab!=="location-management"}><LocationManagement locations={allLocations} api={requestApi} done={async message=>{notify(message);await refresh()}} loading={pickLocationsLoading} externalError={pickLocationsError}/></div>}
           {allowedPageKeys.has("warehouse-ledger")&&<div className="warehouse-data-panel" role="tabpanel" hidden={warehouseDataTab!=="warehouse-ledger"}><WarehouseLedger key={`${ledgerEntry.tab}:${ledgerEntry.query}`} pallets={data!.pallets} locations={allLocations} movements={ledgerMovements??[]} initialTab={ledgerEntry.tab} initialQuery={ledgerEntry.query} invalidSkuCodes={invalidSkuCodes} loading={ledgerLoading||pickLocationsLoading} error={ledgerError||pickLocationsError} api={requestApi} done={async message=>{notify(message);await refresh()}}/></div>}
         </div>}
-        {activeTimekeepingPage&&<TimekeepingModule page={activeTimekeepingPage} titleTarget={timekeepingTitleTarget} isAdmin={effectiveUser.role==="admin"} initialScanBadge={timeScanBadge} initialRecordBadge={timeRecordBadge} openScan={allowedPageKeys.has("time-scan")?badge=>{setTimeScanBadge(badge);setActive("扫描台")}:undefined} openRecords={allowedPageKeys.has("time-records")?badge=>{setTimeRecordBadge(badge);setActive("工作记录")}:undefined} dashboardDate={timeDashboardDate} dashboardRange={timeDashboardRange} dashboardExportKey={timeDashboardExportKey} dashboardImportOpen={timeDashboardImportOpen} closeDashboardImport={()=>setTimeDashboardImportOpen(false)}/>}
+        {activeTimekeepingPage&&<TimekeepingModule
+          page={activeTimekeepingPage} titleTarget={timekeepingTitleTarget} isAdmin={effectiveUser.role==="admin"}
+          initialScanBadge={timeScanBadge} initialRecordBadge={timeRecordBadge}
+          openScan={allowedPageKeys.has("time-scan")?badge=>{setTimeScanBadge(badge);setActive("扫描台")}:undefined}
+          openRecords={allowedPageKeys.has("time-records")?badge=>{setTimeRecordBadge(badge);setActive("工作记录")}:undefined}
+          dashboardDate={timeDashboardDate} dashboardExportStartDate={timeDashboardExportStartDate} dashboardExportEndDate={timeDashboardExportEndDate}
+          dashboardFilters={timeDashboardFilters} setDashboardFilters={setTimeDashboardFilters} dashboardExportKey={timeDashboardExportKey}
+          dashboardImportOpen={timeDashboardImportOpen} closeDashboardImport={()=>setTimeDashboardImportOpen(false)}
+          employeeSort={timeEmployeeSort} setEmployeeSort={setTimeEmployeeSort}/>}
       </div>
     </section>
     {modal&&["store","pick","move"].includes(modal)&&<TaskCreateModal type={modal as "store"|"pick"|"move"} pallets={data!.pallets} locations={modal==="pick"?allLocations:data!.locations} selected={selected} close={()=>setModal(null)} locationsLoading={modal==="pick"&&pickLocationsLoading} locationsError={modal==="pick"?pickLocationsError:""}

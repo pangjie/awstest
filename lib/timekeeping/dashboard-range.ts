@@ -1,36 +1,27 @@
-import { addDays, localDateTimeToIso } from "./time";
+import { addDays, localDateTimeToIso, workDate } from "./time";
 
-export const DASHBOARD_RANGES=[
-  {id:"1d",days:1},
-  {id:"3d",days:3},
-  {id:"7d",days:7},
-  {id:"14d",days:14},
-  {id:"30d",days:30},
-] as const;
-
-export type DashboardRangeId=(typeof DASHBOARD_RANGES)[number]["id"];
-
-export function normalizeDashboardRange(value:unknown):DashboardRangeId{
-  return DASHBOARD_RANGES.some(range=>range.id===value)?value as DashboardRangeId:"1d";
-}
-
-export function dashboardRangeBounds(date:string,rangeId:DashboardRangeId){
-  const range=DASHBOARD_RANGES.find(item=>item.id===rangeId)??DASHBOARD_RANGES[0];
-  const startDate=addDays(date,1-range.days);
-  const label=dashboardRangeLabel(date,range.id);
+export function dashboardRangeBounds(requestedStartDate?:string|null,requestedEndDate?:string|null){
+  const fallback=workDate();
+  let startDate=validDate(requestedStartDate)?requestedStartDate:fallback;
+  let endDate=validDate(requestedEndDate)?requestedEndDate:fallback;
+  if(startDate>endDate)[startDate,endDate]=[endDate,startDate];
   return {
-    id:range.id,
-    label,
+    id:"custom" as const,
+    label:dashboardRangeLabel(startDate,endDate),
     startDate,
-    endDate:date,
+    endDate,
     start:localDateTimeToIso(`${startDate}T00:00`),
-    end:localDateTimeToIso(`${addDays(date,1)}T00:00`),
+    end:localDateTimeToIso(`${addDays(endDate,1)}T00:00`),
   };
 }
 
-export function dashboardRangeLabel(date:string,rangeId:DashboardRangeId){
-  const range=DASHBOARD_RANGES.find(item=>item.id===rangeId)??DASHBOARD_RANGES[0];
-  const startDate=addDays(date,1-range.days);
+export function dashboardRangeLabel(startDate:string,endDate:string){
   const display=(value:string)=>value.replaceAll("-","/");
-  return range.days===1?display(date):`${display(startDate)}–${display(date)}`;
+  return startDate===endDate?display(startDate):`${display(startDate)}–${display(endDate)}`;
+}
+
+function validDate(value:unknown):value is string{
+  if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+  const parsed=new Date(`${value}T12:00:00Z`);
+  return !Number.isNaN(parsed.getTime())&&parsed.toISOString().slice(0,10)===value;
 }

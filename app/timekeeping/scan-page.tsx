@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { isValidEmployeeId } from "@/lib/timekeeping/employee-id";
 import { timeApi } from "./api";
 import { formatClock, formatClockWithSeconds, formatDurationWithSeconds, stateLabel } from "./format";
 import type { EmployeeSnapshot, ScanResponse, WorkItem, WorkItemsResponse } from "./types";
@@ -58,13 +59,14 @@ export default function ScanPage({titleTarget,initialBadge}:{titleTarget:HTMLDiv
   },[currentLeadWave,snapshot]);
   const selectScannedCode=useCallback((scannedCode:string)=>{
     const normalized=scannedCode.trim().toUpperCase();
+    if(isValidEmployeeId(normalized)){void scan(normalized);return}
     if(normalized==="ACT-CLOCKIN"){selectAction("clock-in");setCode("");return}
     if(normalized==="ACT-OUT"||normalized==="OUT"||normalized==="下班"){selectAction("clock-out");setCode("");return}
     if(normalized==="ACT-WAVE-COMPLETE"){selectAction("complete");setCode("");return}
     const item=[...(workItems?.standardTasks??[]),...(workItems?.currentWaves??[])].find(candidate=>[candidate.barcode,candidate.code,candidate.waveNo].some(value=>value?.toUpperCase()===normalized));
     if(item){selectItem(item);setCode("");return}
     setError(`无法识别操作码或任务 ${normalized}`);setCode("");
-  },[selectAction,selectItem,workItems]);
+  },[scan,selectAction,selectItem,workItems]);
 
   useEffect(()=>{
     const normalized=code.trim();

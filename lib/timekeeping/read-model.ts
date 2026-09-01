@@ -1,7 +1,7 @@
 import { getPool } from "../../db";
 import { ensureTimekeepingSchema } from "../../db/timekeeping-runtime";
 import { getEmployeeSnapshot, getTimeRevision, reconcileStaleOpenShifts } from "./data";
-import { dashboardRangeBounds, normalizeDashboardRange } from "./dashboard-range";
+import { dashboardRangeBounds } from "./dashboard-range";
 import { durationMs, monthRange, workDate } from "./time";
 
 type Timestamp=string|Date;
@@ -93,7 +93,7 @@ export async function readWorkItems({includeHistory=true}:{includeHistory?:boole
     }
     const participants=Array.from(sessionsByEmployee.entries()).map(([employeeId,rows])=>{
       const first=rows[0];
-      return {employeeId,name:first.employee_name,totalMs:rows.reduce((sum,row)=>sum+sessionDuration(row,now),0),firstStartedAt:toIso(first.started_at),lastEndedAt:toIsoOrNull(rows.at(-1)?.ended_at),sessionCount:rows.length,active:rows.some(row=>!row.ended_at&&row.shift_clock_out===null),onDuty:rows.some(row=>row.shift_clock_out===null),role:first.assignment_role==="lead"?"lead" as const:"helper" as const};
+      return {employeeId,badgeCode:first.badge_code,name:first.employee_name,totalMs:rows.reduce((sum,row)=>sum+sessionDuration(row,now),0),firstStartedAt:toIso(first.started_at),lastEndedAt:toIsoOrNull(rows.at(-1)?.ended_at),sessionCount:rows.length,active:rows.some(row=>!row.ended_at&&row.shift_clock_out===null),onDuty:rows.some(row=>row.shift_clock_out===null),role:first.assignment_role==="lead"?"lead" as const:"helper" as const};
     }).sort((a,b)=>Number(b.role==="lead")-Number(a.role==="lead")||a.firstStartedAt.localeCompare(b.firstStartedAt));
     return {
       id:item.id,barcode:item.barcode,code:item.code,waveNo:item.wave_no,name:item.name,client:item.client,channelName:item.channel_name,channelType:item.channel_type,
@@ -107,7 +107,8 @@ export async function readWorkItems({includeHistory=true}:{includeHistory?:boole
 
 export async function readTodayScanOperations(){
   await ensureTimekeepingSchema();
-  const range=dashboardRangeBounds(workDate(),"1d");
+  const today=workDate();
+  const range=dashboardRangeBounds(today,today);
   const result=await getPool().query<ScanEventRow>(`SELECT event.id,event.event_type,event.outcome,event.response_payload,event.occurred_at,event.operator_username,event.employee_id,employee.name AS employee_name
     FROM time_scan_events event
     LEFT JOIN time_employees employee ON employee.id=event.employee_id
@@ -120,11 +121,10 @@ export async function readTodayScanOperations(){
   });
 }
 
-export async function readDashboard(requestedDate?:string|null,requestedRange?:string|null){
+export async function readDashboard(requestedStartDate?:string|null,requestedEndDate?:string|null){
   await ensureTimekeepingSchema();
   await reconcileStaleOpenShifts();
-  const date=/^\d{4}-\d{2}-\d{2}$/.test(requestedDate??"")?requestedDate!:workDate();
-  const range=dashboardRangeBounds(date,normalizeDashboardRange(requestedRange));
+  const range=dashboardRangeBounds(requestedStartDate,requestedEndDate);
   const now=new Date();
   const rangeStart=new Date(range.start).getTime();
   const rangeEnd=new Date(range.end).getTime();
@@ -158,7 +158,7 @@ export async function readDashboard(requestedDate?:string|null,requestedRange?:s
   const isActive=(row:ParticipantRow)=>rangeContainsNow&&!row.ended_at&&row.shift_clock_out===null;
   const fixedItems=items.standardTasks.map(item=>{
     const sessions=rangeSessions.filter(row=>row.work_item_id===item.id);
-    const participants=Array.from(new Set(sessions.map(row=>row.employee_id))).map(employeeId=>{const rows=sessions.filter(row=>row.employee_id===employeeId);const first=rows[0];return {employeeId,name:first.employee_name,totalMs:rows.reduce((sum,row)=>sum+sessionDurationInRange(row,now,rangeStart,rangeEnd),0),active:rows.some(isActive)}});
+    const participants=Array.from(new Set(sessions.map(row=>row.employee_id))).map(employeeId=>{const rows=sessions.filter(row=>row.employee_id===employeeId);const first=rows[0];return {employeeId,badgeCode:first.badge_code,name:first.employee_name,totalMs:rows.reduce((sum,row)=>sum+sessionDurationInRange(row,now,rangeStart,rangeEnd),0),active:rows.some(isActive)}});
     return {id:item.id,code:item.code,name:item.name,sortOrder:item.sortOrder,totalMs:sessions.reduce((sum,row)=>sum+sessionDurationInRange(row,now,rangeStart,rangeEnd),0),activeCount:participants.filter(row=>row.active).length,participants};
   });
   const waveSessions=rangeSessions.filter(row=>row.work_type==="wave");
@@ -173,7 +173,7 @@ export async function readDashboard(requestedDate?:string|null,requestedRange?:s
     const participants=employeeIds.map(employeeId=>{
       const rows=sessions.filter(row=>row.employee_id===employeeId);
       const first=rows[0];
-      return {employeeId,name:first.employee_name,totalMs:rows.reduce((sum,row)=>sum+sessionDurationInRange(row,now,rangeStart,rangeEnd),0),firstStartedAt:toIso(first.started_at),lastEndedAt:toIsoOrNull(rows.at(-1)?.ended_at),sessionCount:rows.length,active:rows.some(isActive),onDuty:rows.some(row=>row.shift_clock_out===null),role:first.assignment_role==="lead"?"lead" as const:"helper" as const};
+      return {employeeId,badgeCode:first.badge_code,name:first.employee_name,totalMs:rows.reduce((sum,row)=>sum+sessionDurationInRange(row,now,rangeStart,rangeEnd),0),firstStartedAt:toIso(first.started_at),lastEndedAt:toIsoOrNull(rows.at(-1)?.ended_at),sessionCount:rows.length,active:rows.some(isActive),onDuty:rows.some(row=>row.shift_clock_out===null),role:first.assignment_role==="lead"?"lead" as const:"helper" as const};
     }).sort((a,b)=>Number(b.role==="lead")-Number(a.role==="lead")||a.firstStartedAt.localeCompare(b.firstStartedAt));
     return {...item,startedAt:toIsoOrNull(sessions[0]?.started_at),lastEndedAt:toIsoOrNull(sessions.at(-1)?.ended_at),totalMs:sessions.reduce((sum,row)=>sum+sessionDurationInRange(row,now,rangeStart,rangeEnd),0),activeCount:participants.filter(row=>row.active).length,participants};
   });
@@ -181,7 +181,7 @@ export async function readDashboard(requestedDate?:string|null,requestedRange?:s
   const waveMs=waveSessions.reduce((sum,row)=>sum+sessionDurationInRange(row,now,rangeStart,rangeEnd),0);
   const scanMs=rangeSessions.filter(row=>row.barcode==="JOB-SCAN"||row.barcode==="JOB-SINGLE-SCAN").reduce((sum,row)=>sum+sessionDurationInRange(row,now,rangeStart,rangeEnd),0);
   return {
-    ok:true as const,date,range,revision:await getTimeRevision(),generatedAt:now.toISOString(),timeZone:"America/New_York",
+    ok:true as const,date:range.endDate,range,revision:await getTimeRevision(),generatedAt:now.toISOString(),timeZone:"America/New_York",
     filterUniverse:{channels:Array.from(new Set(projectTotals.map(item=>item.channelName).filter(Boolean)))},attendance,
     taskTotals:{totalMs,waveMs,scanMs,otherMs:Math.max(0,totalMs-waveMs-scanMs),activeCount:rangeSessions.filter(isActive).length,waveActiveCount:waveSessions.filter(isActive).length,scanActiveCount:rangeSessions.filter(row=>(row.barcode==="JOB-SCAN"||row.barcode==="JOB-SINGLE-SCAN")&&isActive(row)).length,otherActiveCount:rangeSessions.filter(row=>row.work_type!=="wave"&&row.barcode!=="JOB-SCAN"&&row.barcode!=="JOB-SINGLE-SCAN"&&isActive(row)).length},
     dailyTasks:fixedItems,projectTotals,
