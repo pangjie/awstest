@@ -16,7 +16,7 @@ import { addDays } from "@/lib/timekeeping/time";
 import BrandMark from "./brand-mark";
 import { currentDate } from "./timekeeping/format";
 import TimekeepingModule from "./timekeeping/timekeeping-module";
-import type { DashboardFilters, EmployeeSortState } from "./timekeeping/types";
+import type { DashboardFilters, DashboardSortState, EmployeeSortState } from "./timekeeping/types";
 
 type Role="admin"|"manager"|"operator";
 type SessionUser={id:number;username:string;name:string;role:Role;pagePermissions:PageKey[]};
@@ -209,6 +209,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
   const [timeDashboardExportStartDate,setTimeDashboardExportStartDate]=useState(currentDate);
   const [timeDashboardExportEndDate,setTimeDashboardExportEndDate]=useState(currentDate);
   const [timeDashboardFilters,setTimeDashboardFilters]=useState<DashboardFilters>({channel:[],type:[],state:[],employee:[]});
+  const [timeDashboardSort,setTimeDashboardSort]=useState<DashboardSortState>({key:"default",descending:false});
   const [timeEmployeeSort,setTimeEmployeeSort]=useState<EmployeeSortState>({key:"name",descending:false});
   const [timeDashboardExportKey,setTimeDashboardExportKey]=useState(0);
   const [timeDashboardImportOpen,setTimeDashboardImportOpen]=useState(false);
@@ -391,7 +392,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
           openScan={allowedPageKeys.has("time-scan")?badge=>{setTimeScanBadge(badge);setActive("任务分发")}:undefined}
           openRecords={allowedPageKeys.has("time-records")?badge=>{setTimeRecordBadge(badge);setActive("工作记录")}:undefined}
           dashboardDate={timeDashboardDate} dashboardExportStartDate={timeDashboardExportStartDate} dashboardExportEndDate={timeDashboardExportEndDate}
-          dashboardFilters={timeDashboardFilters} setDashboardFilters={setTimeDashboardFilters} dashboardExportKey={timeDashboardExportKey}
+          dashboardFilters={timeDashboardFilters} setDashboardFilters={setTimeDashboardFilters} dashboardSort={timeDashboardSort} setDashboardSort={setTimeDashboardSort} dashboardExportKey={timeDashboardExportKey}
           dashboardImportOpen={timeDashboardImportOpen} closeDashboardImport={()=>setTimeDashboardImportOpen(false)}
           employeeSort={timeEmployeeSort} setEmployeeSort={setTimeEmployeeSort} portableDevice={portableDevice}/>}
       </div>

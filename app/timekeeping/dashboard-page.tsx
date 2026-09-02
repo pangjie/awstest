@@ -8,7 +8,7 @@ import { downloadWorkbook } from "@/lib/excel-workbook";
 import { parseWaveText, type ParsedWave } from "@/lib/timekeeping/waves";
 import { timeApi } from "./api";
 import { formatClockWithSeconds, formatDurationWithSeconds, stateLabel } from "./format";
-import type { DashboardFilterKey, DashboardFilters, DashboardResponse, WorkItem, WorkParticipant } from "./types";
+import type { DashboardFilterKey, DashboardFilters, DashboardResponse, DashboardSortKey, DashboardSortState, WorkItem, WorkParticipant } from "./types";
 import { channelLabel, WaveChannelTag, WaveTypeTag, waveTypeInfo } from "./wave-display";
 
 type WaveState="completed"|"interrupted"|"working"|"unstarted"|"paused";
@@ -18,10 +18,10 @@ const STATE_OPTIONS:FilterOption[]=[
   {value:"unstarted",label:"未开始",count:0},{value:"working",label:"进行中",count:0},
   {value:"interrupted",label:"中断",count:0},{value:"paused",label:"暂停",count:0},{value:"completed",label:"已完成",count:0},
 ];
-const WAVE_EXPORT_HEADERS=["渠道","类型","波次号","状态","SKU","订单","件数","负责人","协同人员","开始时间","完结时间","波次工时","每小时件数","记录状态"];
+const WAVE_EXPORT_HEADERS=["渠道","类型","波次号","状态","SKU","订单","件数","负责人","协同人员","开始时间","完结时间","波次工时","时效","记录状态"];
 const WAVE_EXPORT_WIDTHS=[12,9,22,10,8,8,8,15,28,24,24,14,12,10];
 
-export default function DashboardPage({date,exportStartDate,exportEndDate,filters,setFilters,exportKey,importOpen,closeImport,openScan}:{date:string;exportStartDate:string;exportEndDate:string;filters:DashboardFilters;setFilters:Dispatch<SetStateAction<DashboardFilters>>;exportKey:number;importOpen:boolean;closeImport:()=>void;openScan?:((badge:string)=>void)}){
+export default function DashboardPage({date,exportStartDate,exportEndDate,filters,setFilters,sortState,setSortState,exportKey,importOpen,closeImport,openScan}:{date:string;exportStartDate:string;exportEndDate:string;filters:DashboardFilters;setFilters:Dispatch<SetStateAction<DashboardFilters>>;sortState:DashboardSortState;setSortState:Dispatch<SetStateAction<DashboardSortState>>;exportKey:number;importOpen:boolean;closeImport:()=>void;openScan?:((badge:string)=>void)}){
   const [data,setData]=useState<DashboardResponse|null>(null);
   const [now,setNow]=useState(()=>Date.now());
   const [openFilter,setOpenFilter]=useState<DashboardFilterKey|null>(null);
@@ -89,7 +89,9 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
     };
   },[date,load]);
 
-  const {projects,dailyTasks,taskTotals,waveKpis,employeeKpis}=useMemo(()=>dashboardView(data,now),[data,now]);
+  const {projects,dailyTasks,taskTotals,waveKpis,completionKpis,employeeKpis}=useMemo(()=>dashboardView(data,now),[data,now]);
+  const warehouseTask=dailyTasks.find(task=>task.code==="WAREHOUSE");
+  const remainingDailyTasks=dailyTasks.filter(task=>task.code!=="WAREHOUSE");
   const filterOptions=useMemo(()=>({
     channel:countOptions(projects.map(item=>channelLabel(item.channelName))),
     type:countOptions(projects.map(item=>waveTypeInfo(item.channelType).label)),
@@ -103,7 +105,11 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
     &&!filters.state.includes(waveState(item))
     &&(!employeeFilterActive||item.participants.some(person=>!filters.employee.includes(String(person.employeeId))))
   )),[employeeFilterActive,filters,projects]);
-  const workRows=useMemo(()=>visibleProjects.map(waveExportRow),[visibleProjects]);
+  const orderedProjects=useMemo(()=>sortWaves(visibleProjects,sortState),[sortState,visibleProjects]);
+  const workRows=useMemo(()=>orderedProjects.map(waveExportRow),[orderedProjects]);
+  const filtersActive=Object.values(filters).some(values=>values.length);
+  const changeSort=(key:Exclude<DashboardSortKey,"default">)=>setSortState(current=>current.key===key?{key,descending:!current.descending}:{key,descending:true});
+  const resetView=()=>{setFilters({channel:[],type:[],state:[],employee:[]});setSortState({key:"default",descending:false});setOpenFilter(null)};
 
   const exportDashboard=useCallback(async()=>{
     try{
@@ -113,7 +119,9 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
       const statisticRows:Array<Array<string|number>>=[
         ["统计项","数值","说明"],["日期范围",exportData.range.label,""],["波次数量",exportView.waveKpis.total,"按波次创建时间统计"],
         ["未开启波次",exportView.waveKpis.unstarted,""],["当前波次",exportView.waveKpis.current,""],["已完成波次",exportView.waveKpis.completed,""],
-        ["员工总数",exportView.employeeKpis.total,"当前在岗"],["拣货员工",exportView.employeeKpis.picking,"正在处理波次"],["仓务员工",exportView.employeeKpis.warehouse,"正在处理其他工作项目"],["待命员工",exportView.employeeKpis.standby,"在岗且暂无任务"],
+        ["完成波次单量",exportView.completionKpis.orders,""],["完成波次拣货件数",exportView.completionKpis.pieces,""],
+        ["完成多件订单",exportView.completionKpis.multipleOrders,""],["完成混件订单",exportView.completionKpis.mixedOrders,""],
+        ["员工总数",exportView.employeeKpis.total,"日期范围内曾 Sign In"],["拣货员工",exportView.employeeKpis.picking,"正在处理波次、混件扫描或单件扫描"],["仓务员工",exportView.employeeKpis.warehouse,"正在处理其他工作项目"],["待命员工",exportView.employeeKpis.standby,"在岗且暂无任务"],
         ["工作总时长",formatDurationWithSeconds(exportView.taskTotals.totalMs),`${exportView.taskTotals.activeCount} 人当前计时`],["波次工时",formatDurationWithSeconds(exportView.taskTotals.waveMs),`${exportView.taskTotals.waveActiveCount} 人处理波次`],
         ...exportView.dailyTasks.map(task=>[task.name,formatDurationWithSeconds(task.totalMs),task.participants.map(person=>person.name).join("、")]),
       ];
@@ -163,19 +171,21 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
       <aside className="time-dashboard-stat-column" aria-label="现场统计">
         <div className="time-dashboard-metrics">
           <WaveStatusMetric total={waveKpis.total} unstarted={waveKpis.unstarted} current={waveKpis.current} completed={waveKpis.completed}/>
+          <CompletionMetric orders={completionKpis.orders} pieces={completionKpis.pieces} multipleOrders={completionKpis.multipleOrders} mixedOrders={completionKpis.mixedOrders}/>
           <EmployeeStatusMetric total={employeeKpis.total} picking={employeeKpis.picking} warehouse={employeeKpis.warehouse} standby={employeeKpis.standby}/>
           <Metric label="工作总时长" value={formatDurationWithSeconds(taskTotals.totalMs)} note={`${taskTotals.activeCount} 人当前计时`} timer/>
           <Metric label="波次工时" value={formatDurationWithSeconds(taskTotals.waveMs)} note={`${taskTotals.waveActiveCount} 人处理波次`} timer/>
+          {warehouseTask&&<DailyTaskMetric task={warehouseTask} openScan={openScan}/>}
         </div>
-        <DailyTaskSummary tasks={dailyTasks} openScan={openScan}/>
+        <DailyTaskSummary tasks={remainingDailyTasks} openScan={openScan}/>
       </aside>
 
       <section className="time-card time-wave-board">
       <div className="time-card-title time-dashboard-wave-title"><div><h3>工作汇总</h3><p>当前波次及 {data.range.label} 参与过的波次</p></div><div className="time-dashboard-wave-actions"><button type="button" className="time-dashboard-filter-export" disabled={!visibleProjects.length} onClick={()=>void exportFilteredWaves()}>导出筛选结果</button><div className="time-dashboard-filters">
         {(["channel","type","state","employee"] as const).map(key=><MultiSelectFilter key={key} label={{channel:"渠道",type:"类型",state:"状态",employee:"员工"}[key]} options={filterOptions[key]} excluded={filters[key]} open={openFilter===key} setOpen={open=>setOpenFilter(open?key:null)} setExcluded={excluded=>setFilters(current=>({...current,[key]:excluded}))}/>) }
-        <button type="button" className="time-dashboard-filter-reset" disabled={!Object.values(filters).some(values=>values.length)} onClick={()=>{setFilters({channel:[],type:[],state:[],employee:[]});setOpenFilter(null)}}>重置</button>
+        <button type="button" className="time-dashboard-filter-reset" disabled={!filtersActive&&sortState.key==="default"} onClick={resetView}>重置</button>
       </div></div></div>
-      <div className="time-table-wrap"><table className="time-table time-data-table time-dashboard-wave-table"><colgroup><col className="time-wave-channel-col"/><col className="time-wave-type-col"/><col className="time-wave-number-col"/><col className="time-wave-state-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-lead-col"/><col className="time-wave-start-col"/><col className="time-wave-completed-col"/><col className="time-wave-duration-col"/><col className="time-wave-rate-col"/><col className="time-wave-action-col"/></colgroup><thead><tr><th>渠道</th><th>类型</th><th>波次号</th><th>状态</th><th>SKU</th><th>订单</th><th>件数</th><th>负责人</th><th>开始时间</th><th>完结时间</th><th>波次工时</th><th>每小时件数</th><th>操作</th></tr></thead><tbody>{visibleProjects.map(item=><WaveRow item={item} key={item.id} pending={pendingWaveId===item.id} complete={()=>void mutate(item,"complete")} interrupt={()=>void mutate(item,"interrupt")} remove={()=>void mutate(item,"delete")} openScan={openScan}/>)}</tbody></table></div>
+      <div className="time-table-wrap"><table className="time-table time-data-table time-dashboard-wave-table"><colgroup><col className="time-wave-channel-col"/><col className="time-wave-type-col"/><col className="time-wave-number-col"/><col className="time-wave-state-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-lead-col"/><col className="time-wave-start-col"/><col className="time-wave-completed-col"/><col className="time-wave-duration-col"/><col className="time-wave-rate-col"/><col className="time-wave-action-col"/></colgroup><thead><tr><th>渠道</th><th>类型</th><th>波次号</th><th>状态</th><th>SKU</th><th>订单</th><th>件数</th><th>负责人</th><th>开始时间</th><th>完结时间</th><WaveSortHead label="波次工时" field="duration" current={sortState} onClick={changeSort}/><WaveSortHead label="时效" field="efficiency" current={sortState} onClick={changeSort}/><th>操作</th></tr></thead><tbody>{orderedProjects.map(item=><WaveRow item={item} key={item.id} pending={pendingWaveId===item.id} complete={()=>void mutate(item,"complete")} interrupt={()=>void mutate(item,"interrupt")} remove={()=>void mutate(item,"delete")} openScan={openScan}/>)}</tbody></table></div>
       {visibleProjects.length===0&&<p className="time-empty">当前筛选下暂无波次</p>}
       </section>
     </div>
@@ -187,6 +197,8 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
 function Metric({label,value,note,timer=false}:{label:string;value:string|number;note:string;timer?:boolean}){return <article className="time-metric"><span>{label}</span><b>{timer?<RollingClock value={String(value)}/>:value}</b><small>{note}</small></article>}
 
 function WaveStatusMetric({total,unstarted,current,completed}:{total:number;unstarted:number;current:number;completed:number}){return <article className="time-metric time-status-metric time-wave-status-metric"><span>波次状态<small>波次数量 {total}</small></span><div><label><b>{unstarted}</b><small>未开启</small></label><i>/</i><label><b>{current}</b><small>当前</small></label><i>/</i><label><b>{completed}</b><small>已完成</small></label></div></article>}
+
+function CompletionMetric({orders,pieces,multipleOrders,mixedOrders}:{orders:number;pieces:number;multipleOrders:number;mixedOrders:number}){return <article className="time-metric time-status-metric time-completion-metric"><span>完成情况<small>已完成波次</small></span><div><label><b>{orders}</b><small>单量总数</small></label><label><b>{pieces}</b><small>拣货件数</small></label><label><b>{multipleOrders}</b><small>多件订单</small></label><label><b>{mixedOrders}</b><small>混件订单</small></label></div></article>}
 
 function EmployeeStatusMetric({total,picking,warehouse,standby}:{total:number;picking:number;warehouse:number;standby:number}){return <article className="time-metric time-status-metric time-employee-status-metric"><span>员工统计<small>员工总数 {total}</small></span><div><label><b>{picking}</b><small>拣货</small></label><i>/</i><label><b>{warehouse}</b><small>仓务</small></label><i>/</i><label><b>{standby}</b><small>待命</small></label></div></article>}
 
@@ -210,6 +222,8 @@ function MultiSelectFilter({label,options,excluded,open,setOpen,setExcluded}:{la
   const summary=selected===options.length?"全部":selected===0?"未选择":`已选 ${selected}`;
   return <div className="time-dashboard-filter" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))setOpen(false)}}><span>{label}</span><div><button type="button" aria-expanded={open} onClick={()=>setOpen(!open)}>{summary}<i>⌄</i></button>{open&&<div className="time-dashboard-filter-menu"><div><button type="button" onClick={()=>setExcluded([])}>全选</button><button type="button" onClick={()=>setExcluded(options.map(option=>option.value))}>清空</button></div>{options.map(option=><label key={option.value}><input type="checkbox" checked={!excluded.includes(option.value)} onChange={()=>setExcluded(excluded.includes(option.value)?excluded.filter(value=>value!==option.value):[...excluded,option.value])}/><span>{option.label}</span><small>{option.count}</small></label>)}</div>}</div></div>;
 }
+
+function WaveSortHead({label,field,current,onClick}:{label:string;field:Exclude<DashboardSortKey,"default">;current:DashboardSortState;onClick:(key:Exclude<DashboardSortKey,"default">)=>void}){const active=current.key===field;return <th aria-sort={active?(current.descending?"descending":"ascending"):"none"}><button type="button" className="time-sort time-wave-sort" aria-label={`按${label}排序`} onClick={()=>onClick(field)}><span>{label}</span><i aria-hidden="true">{active?(current.descending?"↓":"↑"):"↕"}</i></button></th>}
 
 function WaveRow({item,pending,complete,interrupt,remove,openScan}:{item:WorkItem;pending:boolean;complete:()=>void;interrupt:()=>void;remove:()=>void;openScan?:((badge:string)=>void)}){
   const state=waveState(item);
@@ -261,15 +275,42 @@ function dashboardView(data:DashboardResponse|null,now:number){
   const rangeEnd=data?new Date(data.range.end).getTime():0;
   const datedProjects=projects.filter(item=>{const createdAt=new Date(item.createdAt).getTime();return createdAt>=rangeStart&&createdAt<rangeEnd});
   const waveKpis={total:datedProjects.length,current:datedProjects.filter(item=>waveState(item)==="working").length,unstarted:datedProjects.filter(item=>waveState(item)==="unstarted").length,completed:datedProjects.filter(item=>waveState(item)==="completed").length};
-  const picking=totals?.waveActiveCount??0;
-  const warehouse=Math.max(0,(totals?.activeCount??0)-picking);
+  const completionKpis=projects.reduce((totals,item)=>{
+    if(item.status!=="completed")return totals;
+    totals.orders+=item.orderCount;
+    totals.pieces+=item.pieceCount;
+    const type=waveTypeInfo(item.channelType).label;
+    if(type==="多件")totals.multipleOrders+=item.orderCount;
+    if(type==="混件")totals.mixedOrders+=item.orderCount;
+    return totals;
+  },{orders:0,pieces:0,multipleOrders:0,mixedOrders:0});
+  const pickingEmployees=new Set<number>();
+  const warehouseEmployees=new Set<number>();
+  for(const item of projects)for(const person of item.participants)if(person.active)pickingEmployees.add(person.employeeId);
+  for(const task of dailyTasks){
+    const employees=task.code==="SCAN"||task.code==="SINGLE-SCAN"?pickingEmployees:warehouseEmployees;
+    for(const person of task.participants)if(person.active)employees.add(person.employeeId);
+  }
+  for(const employeeId of pickingEmployees)warehouseEmployees.delete(employeeId);
   const standby=data?.attendance.filter(employee=>employee.state==="ready").length??0;
-  return {projects,dailyTasks,taskTotals,waveKpis,employeeKpis:{total:picking+warehouse+standby,picking,warehouse,standby}};
+  return {projects,dailyTasks,taskTotals,waveKpis,completionKpis,employeeKpis:{total:data?.attendance.length??0,picking:pickingEmployees.size,warehouse:warehouseEmployees.size,standby}};
 }
 
 function countOptions(values:string[]):FilterOption[]{const counts=new Map<string,number>();for(const value of values)counts.set(value,(counts.get(value)??0)+1);return Array.from(counts,([value,count])=>({value,label:value,count}))}
 function participantOptions(items:WorkItem[]):FilterOption[]{const options=new Map<number,FilterOption>();for(const item of items)for(const person of item.participants){const current=options.get(person.employeeId);if(current)current.count+=1;else options.set(person.employeeId,{value:String(person.employeeId),label:person.name,count:1})}return Array.from(options.values()).sort((left,right)=>left.label.localeCompare(right.label,"zh-CN"))}
 function waveHourlyPieces(item:Pick<WorkItem,"pieceCount"|"totalMs">){return item.totalMs>0?Math.round(item.pieceCount*3_600_000/item.totalMs):null}
+function sortWaves(items:WorkItem[],state:DashboardSortState){
+  const defaultOrder=(left:WorkItem,right:WorkItem)=>left.sortOrder-right.sortOrder||left.id-right.id;
+  if(state.key==="default")return items.toSorted(defaultOrder);
+  return items.toSorted((left,right)=>{
+    const leftValue=state.key==="duration"?left.totalMs:waveHourlyPieces(left);
+    const rightValue=state.key==="duration"?right.totalMs:waveHourlyPieces(right);
+    if(leftValue===null)return rightValue===null?defaultOrder(left,right):1;
+    if(rightValue===null)return -1;
+    const compared=leftValue-rightValue;
+    return (state.descending?-compared:compared)||defaultOrder(left,right);
+  });
+}
 function waveExportRow(item:WorkItem):Array<string|number>{const lead=item.participants.find(person=>person.role==="lead");const helpers=item.participants.filter(person=>person.role==="helper");return [channelLabel(item.channelName),waveTypeInfo(item.channelType).label,item.waveNo??item.code,waveStateLabel(waveState(item)),item.skuCount,item.orderCount,item.pieceCount,lead?.name??"",helpers.map(person=>person.name).join("、"),item.startedAt??"",item.completedAt??"",formatDurationWithSeconds(item.totalMs),waveHourlyPieces(item)??"",item.status==="active"?"当前":"已完成"]}
 function waveState(item:Pick<WorkItem,"status"|"interruptedAt"|"activeCount"|"startedAt">):WaveState{if(item.status==="completed")return "completed";if(item.interruptedAt)return "interrupted";if(item.activeCount>0)return "working";if(item.startedAt===null)return "unstarted";return "paused"}
 function waveStateLabel(state:WaveState){return ({completed:"已完成",interrupted:"中断",working:"进行中",unstarted:"未开始",paused:"暂停"} as const)[state]}
