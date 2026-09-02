@@ -13,6 +13,7 @@ type CameraCapabilities=MediaTrackCapabilities&{focusMode?:string[];zoom?:{min:n
 type CameraConstraintSet=MediaTrackConstraintSet&{focusMode?:string;zoom?:number};
 
 const SCAN_INTERVAL_MS=55;
+const SOUND_PREFERENCE_KEY="time-card-scan-sound";
 const SCAN_REGIONS:ScanRegion[]=[
   {scale:.55,aspectRatio:1,rotation:0},
   {scale:.82,aspectRatio:1.8,rotation:0},
@@ -29,12 +30,16 @@ export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
   const [submitting,setSubmitting]=useState(false);
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
+  const [soundEnabled,setSoundEnabled]=useState(readSoundPreference);
+  const [successFlash,setSuccessFlash]=useState(false);
   const [now,setNow]=useState(Date.now);
   const videoRef=useRef<HTMLVideoElement>(null);
   const streamRef=useRef<MediaStream|null>(null);
+  const audioContextRef=useRef<AudioContext|null>(null);
   const scanningRef=useRef(false);
   const scanLoopRef=useRef<number|null>(null);
   const scanTimeoutRef=useRef<number|null>(null);
+  const successFlashRef=useRef<number|null>(null);
 
   const disposeCamera=useCallback(()=>{
     scanningRef.current=false;
@@ -46,22 +51,45 @@ export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
   },[]);
   const closeCamera=useCallback(()=>{disposeCamera();setCameraOpen(false)},[disposeCamera]);
 
+  const prepareAudio=useCallback(async()=>{
+    try{
+      let context=audioContextRef.current;
+      if(!context||context.state==="closed"){context=new AudioContext();audioContextRef.current=context}
+      if(context.state==="suspended")await context.resume();
+      return context;
+    }catch{return null}
+  },[]);
+
+  const playScanSuccess=useCallback(()=>{
+    if(!soundEnabled||audioContextRef.current?.state!=="running")return;
+    playSuccessChime(audioContextRef.current);
+  },[soundEnabled]);
+
   useEffect(()=>{const interval=window.setInterval(()=>setNow(Date.now()),1_000);return()=>window.clearInterval(interval)},[]);
-  useEffect(()=>()=>disposeCamera(),[disposeCamera]);
+  useEffect(()=>()=>{
+    disposeCamera();
+    if(successFlashRef.current!==null)window.clearTimeout(successFlashRef.current);
+    void audioContextRef.current?.close();
+  },[disposeCamera]);
 
   const loadEmployee=useCallback(async(badge:string)=>{
     setLoading(true);setError("");setNotice("");setSelection(null);
     try{
       const query=new URLSearchParams({badge});
-      setReport(await timeApi<CardScanEmployeeResponse>(`/api/v1/timekeeping/card-scan?${query.toString()}`));
+      const nextReport=await timeApi<CardScanEmployeeResponse>(`/api/v1/timekeeping/card-scan?${query.toString()}`);
+      setReport(nextReport);setSuccessFlash(true);playScanSuccess();
+      if(successFlashRef.current!==null)window.clearTimeout(successFlashRef.current);
+      successFlashRef.current=window.setTimeout(()=>{setSuccessFlash(false);successFlashRef.current=null},900);
     }catch(loadError){setReport(null);setError(loadError instanceof Error?loadError.message:"员工信息读取失败")}
     finally{setLoading(false)}
-  },[]);
+  },[playScanSuccess]);
 
   const startCamera=useCallback(async()=>{
     if(scanningRef.current||loading||submitting)return;
+    setReport(null);setSelection(null);setError("");setNotice("");setSuccessFlash(false);
+    if(soundEnabled)await prepareAudio();
     if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){setError("摄像头扫描需要使用 HTTPS，并允许浏览器访问摄像头");return}
-    setError("");setNotice("");setCameraOpen(true);scanningRef.current=true;
+    setCameraOpen(true);scanningRef.current=true;
     try{
       const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"user"},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}}});
       if(!scanningRef.current){stream.getTracks().forEach(track=>track.stop());return}
@@ -106,7 +134,14 @@ export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
       closeCamera();
       setError(cameraErrorMessage(cameraError));
     }
-  },[closeCamera,loadEmployee,loading,submitting]);
+  },[closeCamera,loadEmployee,loading,prepareAudio,soundEnabled,submitting]);
+
+  const toggleSound=()=>{
+    const enabled=!soundEnabled;
+    setSoundEnabled(enabled);
+    try{window.localStorage.setItem(SOUND_PREFERENCE_KEY,enabled?"on":"off")}catch{}
+    if(enabled)void prepareAudio();
+  };
 
   const confirm=useCallback(async()=>{
     if(!report||!selection||submitting)return;
@@ -130,11 +165,12 @@ export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
         <video ref={videoRef} autoPlay muted playsInline aria-label="工卡扫描摄像头画面"/>
         {!cameraOpen&&<div className="time-card-camera-placeholder"><span>▣</span><b>{loading?"正在读取员工信息":"点击扫描开启摄像头"}</b></div>}
         {cameraOpen&&<div className="time-card-camera-frame" aria-hidden="true"><i/><i/><i/><i/><span/></div>}
+        <button type="button" className="time-card-scan-sound" aria-pressed={soundEnabled} aria-label={soundEnabled?"关闭扫描成功提示音":"开启扫描成功提示音"} disabled={cameraOpen} onClick={toggleSound}><span aria-hidden="true">{soundEnabled?"♪":"×"}</span><b>{soundEnabled?"提示音":"已静音"}</b></button>
       </div>
       <button type="button" className="time-card-scan-button" disabled={cameraOpen||loading||submitting} onClick={()=>void startCamera()}><span>⌁</span><b>{cameraOpen?"扫描中":"扫描"}</b></button>
     </section>
 
-    <section className="time-card-scan-identity" aria-live="polite">
+    <section className={`time-card-scan-identity${successFlash?" success":""}`} aria-live="polite">
       <span>姓名</span>
       <strong>{loading?"读取中…":report?.snapshot.employee.name??"尚未识别员工"}</strong>
     </section>
@@ -162,6 +198,32 @@ function MobileTimelineRow({row}:{row:DailyTimelineRow}){
 function MobileTimelineContent({row}:{row:DailyTimelineRow}){
   if(!row.project||row.project.workType!=="wave")return <p>{row.content}</p>;
   return <p className="time-card-scan-wave"><span><WaveChannelTag value={row.project.channelName}/><WaveTypeTag value={row.project.channelType}/></span><em>{row.content}</em></p>;
+}
+
+function playSuccessChime(context:AudioContext){
+  const start=context.currentTime+.01;
+  const output=context.createGain();
+  output.gain.setValueAtTime(.0001,start);
+  output.gain.exponentialRampToValueAtTime(.16,start+.025);
+  output.gain.exponentialRampToValueAtTime(.0001,start+.44);
+  output.connect(context.destination);
+  [{frequency:659.25,offset:0,duration:.25},{frequency:987.77,offset:.13,duration:.3}].forEach(note=>{
+    const oscillator=context.createOscillator();
+    const envelope=context.createGain();
+    const noteStart=start+note.offset;
+    oscillator.type="sine";oscillator.frequency.setValueAtTime(note.frequency,noteStart);
+    envelope.gain.setValueAtTime(.0001,noteStart);
+    envelope.gain.exponentialRampToValueAtTime(1,noteStart+.018);
+    envelope.gain.exponentialRampToValueAtTime(.0001,noteStart+note.duration);
+    oscillator.connect(envelope);envelope.connect(output);
+    oscillator.start(noteStart);oscillator.stop(noteStart+note.duration+.02);
+  });
+}
+
+function readSoundPreference(){
+  if(typeof window==="undefined")return true;
+  try{return window.localStorage.getItem(SOUND_PREFERENCE_KEY)!=="off"}
+  catch{return true}
 }
 
 function cameraErrorMessage(error:unknown){

@@ -233,6 +233,9 @@ button:disabled { cursor: default; opacity: .48; }
 .time-status-metric label b { display: block; height: 24px; margin: 0; color: #27364e; font-size: 22px; font-variant-numeric: tabular-nums; line-height: 24px; }
 .time-status-metric label small { margin-top: 4px; color: #53647a; font-size: 12px; font-weight: 700; }
 .time-status-metric i { display: grid; height: 24px; place-items: center; color: #7d8999; font-size: 17px; font-style: normal; line-height: 24px; }
+.time-completion-metric > div { grid-template-columns: 1fr 1fr; gap: 7px 8px; }
+.time-completion-metric label b { font-size: 20px; }
+.time-completion-metric label small { margin-top: 2px; }
 .time-wave-board { min-width: 0; margin-bottom: 12px; }
 .time-dashboard-wave-table { min-width: 800px; table-layout: fixed; }
 .time-dashboard-wave-table th,.time-dashboard-wave-table td { height: 44px; padding: 3px 1px; text-align: center; }
@@ -447,6 +450,8 @@ button:disabled { cursor: default; opacity: .48; }
 
 .time-sort { display: inline-grid; width: 100%; grid-template-columns: minmax(0,auto) 12px; align-items: center; justify-content: center; gap: 3px; border: 0; background: transparent; color: inherit; padding: 0; font: inherit; font-weight: 700; white-space: nowrap; }
 .time-sort i { width: 12px; color: #315fb8; font-size: 12px; font-style: normal; text-align: center; }
+.time-dashboard-wave-table .time-wave-sort { grid-template-columns: minmax(0,auto) 7px; gap: 0; font-size: 13px; }
+.time-dashboard-wave-table .time-wave-sort i { width: 7px; font-size: 9px; }
 .time-employee-table { min-width: 1340px; table-layout: fixed; }
 .time-employee-table .time-employee-actions-col,.time-employee-table th:first-child,.time-employee-table td:first-child { width: 246px; min-width: 246px; }
 .time-employee-table th:nth-child(2),.time-employee-table td:nth-child(2) { width: 112px; }
@@ -497,10 +502,18 @@ button:disabled { cursor: default; opacity: .48; }
 .time-card-camera-frame i:nth-child(4) { right: 0; bottom: 0; border-width: 0 4px 4px 0; border-radius: 0 0 8px; }
 .time-card-camera-frame span { position: absolute; top: 50%; right: 5px; left: 5px; height: 2px; background: #79f3c1; box-shadow: 0 0 9px #33d99b; animation: time-card-scan-line 1.7s ease-in-out infinite alternate; }
 @keyframes time-card-scan-line { from { transform: translateY(-46px); } to { transform: translateY(46px); } }
+.time-card-scan-sound { position: absolute; z-index: 2; top: 10px; right: 10px; display: flex; min-width: 92px; height: 38px; align-items: center; justify-content: center; gap: 6px; border: 1px solid #ffffff52; border-radius: 20px; background: #101827d9; color: #fff; padding: 0 12px; box-shadow: 0 4px 14px #0004; backdrop-filter: blur(5px); }
+.time-card-scan-sound span { color: #8ab0ff; font-size: 21px; font-weight: 900; line-height: 1; }
+.time-card-scan-sound b { font-size: 12px; white-space: nowrap; }
+.time-card-scan-sound[aria-pressed="false"] { color: #c3cbd7; }
+.time-card-scan-sound[aria-pressed="false"] span { color: #ef9b9b; }
+.time-card-scan-sound:disabled { opacity: .62; }
 .time-card-scan-button { display: grid; min-height: 170px; place-content: center; gap: 4px; border: 0; border-radius: 15px; background: linear-gradient(145deg,#376fdc,#2858bd); color: #fff; box-shadow: 0 10px 25px #285fc43b; }
 .time-card-scan-button span { font-size: 39px; line-height: 1; }
 .time-card-scan-button b { font-size: 23px; }
 .time-card-scan-identity { min-height: 104px; margin-top: 10px; display: grid; place-content: center; border: 2px solid #dce4ef; border-radius: 15px; background: #fff; text-align: center; box-shadow: 0 6px 22px #1721360b; }
+.time-card-scan-identity.success { border-color: #55bd91; background: #effbf6; animation: time-card-scan-success .9s ease-out; }
+@keyframes time-card-scan-success { 0% { box-shadow: 0 0 0 0 #37b77d70; transform: scale(.985); } 45% { box-shadow: 0 0 0 8px #37b77d20,0 9px 28px #1d8d5e22; transform: scale(1); } 100% { box-shadow: 0 6px 22px #1721360b; } }
 .time-card-scan-identity span { color: #718096; font-size: 13px; font-weight: 800; }
 .time-card-scan-identity strong { display: block; max-width: 100%; margin-top: 1px; overflow: hidden; color: #172136; font-size: clamp(34px,7vw,52px); font-weight: 950; line-height: 1.14; text-overflow: ellipsis; white-space: nowrap; }
 .time-card-scan-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; margin-top: 10px; }
@@ -566,6 +579,7 @@ button:disabled { cursor: default; opacity: .48; }
 @media (prefers-reduced-motion: reduce) {
   .time-rolling-clock .digit > span { animation: none; }
   .time-task-buttons button.current,.time-scan-wave-table tbody tr.current { animation: none; background-position: 50% 0; }
+  .time-card-scan-identity.success { animation: none; }
 }
 
 @media (max-width: 1100px) {
