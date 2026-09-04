@@ -122,7 +122,7 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
         ["完成波次单量",exportView.completionKpis.orders,""],["完成波次拣货件数",exportView.completionKpis.pieces,""],
         ["完成多件订单",exportView.completionKpis.multipleOrders,""],["完成混件订单",exportView.completionKpis.mixedOrders,""],
         ["员工总数",exportView.employeeKpis.total,"日期范围内曾 Sign In"],["拣货员工",exportView.employeeKpis.picking,"正在处理波次、混件扫描或单件扫描"],["仓务员工",exportView.employeeKpis.warehouse,"正在处理其他工作项目"],["待命员工",exportView.employeeKpis.standby,"在岗且暂无任务"],
-        ["工作总时长",formatDurationWithSeconds(exportView.taskTotals.totalMs),`${exportView.taskTotals.activeCount} 人当前计时`],["波次工时",formatDurationWithSeconds(exportView.taskTotals.waveMs),`${exportView.taskTotals.waveActiveCount} 人处理波次`],
+        ["在岗时长",formatDurationWithSeconds(exportView.taskTotals.onDutyMs),""],["工作时长",formatDurationWithSeconds(exportView.taskTotals.totalMs),""],["波次工时",formatDurationWithSeconds(exportView.taskTotals.waveMs),""],
         ...exportView.dailyTasks.map(task=>[task.name,formatDurationWithSeconds(task.totalMs),task.participants.map(person=>person.name).join("、")]),
       ];
       await downloadWorkbook({fileName:`现场看板-${exportData.range.startDate}-${exportData.range.endDate}.xlsx`,sheets:[
@@ -173,8 +173,8 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
           <WaveStatusMetric total={waveKpis.total} unstarted={waveKpis.unstarted} current={waveKpis.current} completed={waveKpis.completed}/>
           <CompletionMetric orders={completionKpis.orders} pieces={completionKpis.pieces} multipleOrders={completionKpis.multipleOrders} mixedOrders={completionKpis.mixedOrders}/>
           <EmployeeStatusMetric total={employeeKpis.total} picking={employeeKpis.picking} warehouse={employeeKpis.warehouse} standby={employeeKpis.standby}/>
-          <Metric label="工作总时长" value={formatDurationWithSeconds(taskTotals.totalMs)} note={`${taskTotals.activeCount} 人当前计时`} timer/>
-          <Metric label="波次工时" value={formatDurationWithSeconds(taskTotals.waveMs)} note={`${taskTotals.waveActiveCount} 人处理波次`} timer/>
+          <WorkHoursMetric onDutyMs={taskTotals.onDutyMs} productiveMs={taskTotals.totalMs}/>
+          <Metric label="波次工时" value={formatDurationWithSeconds(taskTotals.waveMs)} timer/>
           {warehouseTask&&<DailyTaskMetric task={warehouseTask} openScan={openScan}/>}
         </div>
         <DailyTaskSummary tasks={remainingDailyTasks} openScan={openScan}/>
@@ -194,7 +194,9 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
   </div>;
 }
 
-function Metric({label,value,note,timer=false}:{label:string;value:string|number;note:string;timer?:boolean}){return <article className="time-metric"><span>{label}</span><b>{timer?<RollingClock value={String(value)}/>:value}</b><small>{note}</small></article>}
+function Metric({label,value,note,timer=false}:{label:string;value:string|number;note?:string;timer?:boolean}){return <article className={`time-metric${note?"":" time-metric-no-note"}`}><span>{label}</span><b>{timer?<RollingClock value={String(value)}/>:value}</b>{note&&<small>{note}</small>}</article>}
+
+function WorkHoursMetric({onDutyMs,productiveMs}:{onDutyMs:number;productiveMs:number}){return <article className="time-metric time-work-hours-metric"><span>工时统计</span><div><label><small>在岗时长</small><b><RollingClock value={formatDurationWithSeconds(onDutyMs)}/></b></label><label><small>工作时长</small><b><RollingClock value={formatDurationWithSeconds(productiveMs)}/></b></label></div></article>}
 
 function WaveStatusMetric({total,unstarted,current,completed}:{total:number;unstarted:number;current:number;completed:number}){return <article className="time-metric time-status-metric time-wave-status-metric"><span>波次状态<small>波次数量 {total}</small></span><div><label><b>{unstarted}</b><small>未开启</small></label><i>/</i><label><b>{current}</b><small>当前</small></label><i>/</i><label><b>{completed}</b><small>已完成</small></label></div></article>}
 
@@ -270,7 +272,9 @@ function dashboardView(data:DashboardResponse|null,now:number){
   const projects=(data?.projectTotals??[]).map(item=>({...item,totalMs:item.totalMs+liveElapsed*item.activeCount,participants:item.participants.map(person=>({...person,totalMs:person.totalMs+(person.active?liveElapsed:0)}))}));
   const dailyTasks=(data?.dailyTasks??[]).map(item=>({...item,totalMs:item.totalMs+liveElapsed*item.activeCount,participants:item.participants.map(person=>({...person,totalMs:person.totalMs+(person.active?liveElapsed:0)}))}));
   const totals=data?.taskTotals;
-  const taskTotals={totalMs:(totals?.totalMs??0)+liveElapsed*(totals?.activeCount??0),waveMs:(totals?.waveMs??0)+liveElapsed*(totals?.waveActiveCount??0),activeCount:totals?.activeCount??0,waveActiveCount:totals?.waveActiveCount??0};
+  const attendance=data?.attendance??[];
+  const onDutyMs=attendance.reduce((sum,employee)=>sum+employee.onDutyMs,0)+liveElapsed*attendance.filter(employee=>employee.clockOut===null).length;
+  const taskTotals={onDutyMs,totalMs:(totals?.totalMs??0)+liveElapsed*(totals?.activeCount??0),waveMs:(totals?.waveMs??0)+liveElapsed*(totals?.waveActiveCount??0),activeCount:totals?.activeCount??0,waveActiveCount:totals?.waveActiveCount??0};
   const rangeStart=data?new Date(data.range.start).getTime():0;
   const rangeEnd=data?new Date(data.range.end).getTime():0;
   const datedProjects=projects.filter(item=>{const createdAt=new Date(item.createdAt).getTime();return createdAt>=rangeStart&&createdAt<rangeEnd});
@@ -293,7 +297,7 @@ function dashboardView(data:DashboardResponse|null,now:number){
   }
   for(const employeeId of pickingEmployees)warehouseEmployees.delete(employeeId);
   const standby=data?.attendance.filter(employee=>employee.state==="ready").length??0;
-  return {projects,dailyTasks,taskTotals,waveKpis,completionKpis,employeeKpis:{total:data?.attendance.length??0,picking:pickingEmployees.size,warehouse:warehouseEmployees.size,standby}};
+  return {projects,dailyTasks,taskTotals,waveKpis,completionKpis,employeeKpis:{total:attendance.length,picking:pickingEmployees.size,warehouse:warehouseEmployees.size,standby}};
 }
 
 function countOptions(values:string[]):FilterOption[]{const counts=new Map<string,number>();for(const value of values)counts.set(value,(counts.get(value)??0)+1);return Array.from(counts,([value,count])=>({value,label:value,count}))}

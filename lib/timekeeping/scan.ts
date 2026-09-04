@@ -59,7 +59,13 @@ export async function performScan(user:InternalUser,input:ScanInput){
     const action=ACTIONS[code];
     if(!snapshot.shift){
       if(action!=="CLOCKIN")return reject(tx,user,requestId,terminalId,code,requestedEmployeeId,null,"SHIFT_REQUIRED","员工当前不在岗，本次操作未执行",snapshot,409);
-      const preferred=projectCode?await findActiveWorkItem(tx,projectCode):snapshot.currentProject?await findActiveWorkItem(tx,snapshot.currentProject.code):null;
+      const preferred=projectCode
+        ?await findActiveWorkItem(tx,projectCode)
+        :snapshot.currentProject
+          ?await findActiveWorkItem(tx,snapshot.currentProject.code)
+          :snapshot.employee.defaultWorkItemId
+            ?await findDefaultWorkItem(tx,snapshot.employee.defaultWorkItemId)
+            :null;
       const resuming=Boolean(!projectCode&&preferred&&snapshot.currentProject?.id===preferred.id);
       if(projectCode&&!preferred)return reject(tx,user,requestId,terminalId,projectCode,requestedEmployeeId,null,"UNKNOWN_CODE",`无法识别任务 ${projectCode}`,snapshot,404);
       if(preferred){
@@ -129,6 +135,7 @@ export async function performScan(user:InternalUser,input:ScanInput){
 }
 
 async function findActiveWorkItem(tx:TimeTransaction,code:string){return (await tx.select().from(timeWorkItems).where(and(or(eq(timeWorkItems.barcode,code),eq(timeWorkItems.code,code),eq(timeWorkItems.waveNo,code)),eq(timeWorkItems.status,"active"))).limit(1))[0]??null}
+async function findDefaultWorkItem(tx:TimeTransaction,id:number){return (await tx.select().from(timeWorkItems).where(and(eq(timeWorkItems.id,id),eq(timeWorkItems.workType,"standard"),eq(timeWorkItems.status,"active"))).limit(1))[0]??null}
 async function findLeadWave(tx:TimeTransaction,employeeId:number,exceptId:number){return (await tx.select({id:timeWorkItems.id,waveNo:timeWorkItems.waveNo}).from(timeWaveAssignments).innerJoin(timeWorkItems,eq(timeWaveAssignments.workItemId,timeWorkItems.id)).where(and(eq(timeWaveAssignments.employeeId,employeeId),eq(timeWaveAssignments.role,"lead"),eq(timeWorkItems.status,"active"),isNull(timeWorkItems.interruptedAt),ne(timeWorkItems.id,exceptId))).limit(1))[0]??null}
 async function startWork(tx:TimeTransaction,shiftId:number,employeeId:number,item:WorkItem,now:string){
   if(item.workType==="wave"){

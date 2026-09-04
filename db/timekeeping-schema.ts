@@ -10,6 +10,7 @@ export const timeEmployees=pgTable("time_employees",{
   employeeCode:text("employee_code"),
   name:text("name").notNull(),
   organizationType:text("organization_type",{enum:["OZM","JJC"]}).notNull().default("OZM"),
+  defaultWorkItemId:integer("default_work_item_id"),
   active:boolean("active").notNull().default(true),
   createdAt:utcTimestamp("created_at").notNull().defaultNow(),
 },table=>[

@@ -225,6 +225,14 @@ button:disabled { cursor: default; opacity: .48; }
 .time-dashboard-metrics .time-metric > span { align-self: end; color: #4c5d73; font-size: 13px; font-weight: 800; }
 .time-dashboard-metrics .time-metric > b { grid-column: 2; grid-row: 1/3; align-self: center; margin: 0; font-family: var(--font-geist-mono),monospace; font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -.035em; line-height: 1; }
 .time-dashboard-metrics .time-metric > small { align-self: start; overflow: hidden; color: #627187; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.time-dashboard-metrics .time-metric-no-note { grid-template-rows: 1fr; align-items: center; }
+.time-dashboard-metrics .time-metric-no-note > span,.time-dashboard-metrics .time-metric-no-note > b { grid-row: 1; align-self: center; }
+.time-dashboard-metrics .time-work-hours-metric { display: block; min-height: 112px; }
+.time-work-hours-metric > span { display: block; margin-bottom: 7px; }
+.time-work-hours-metric > div { display: grid; gap: 6px; }
+.time-work-hours-metric label { display: grid; grid-template-columns: 58px minmax(0,1fr); align-items: center; gap: 6px; }
+.time-work-hours-metric label small { color: #53647a; font-size: 12px; font-weight: 700; }
+.time-work-hours-metric label b { justify-self: end; margin: 0; color: #27364e; font-family: var(--font-geist-mono),monospace; font-size: 20px; font-variant-numeric: tabular-nums; letter-spacing: -.035em; line-height: 1; }
 .time-status-metric { display: block!important; min-height: 92px!important; }
 .time-status-metric > span { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin-bottom: 5px; }
 .time-status-metric > span > small { color: #69788d; font-size: 10px; font-weight: 700; white-space: nowrap; }
@@ -452,16 +460,17 @@ button:disabled { cursor: default; opacity: .48; }
 .time-sort i { width: 12px; color: #315fb8; font-size: 12px; font-style: normal; text-align: center; }
 .time-dashboard-wave-table .time-wave-sort { grid-template-columns: minmax(0,auto) 7px; gap: 0; font-size: 13px; }
 .time-dashboard-wave-table .time-wave-sort i { width: 7px; font-size: 9px; }
-.time-employee-table { min-width: 1340px; table-layout: fixed; }
+.time-employee-table { min-width: 1400px; table-layout: fixed; }
 .time-employee-table .time-employee-actions-col,.time-employee-table th:first-child,.time-employee-table td:first-child { width: 246px; min-width: 246px; }
 .time-employee-table th:nth-child(2),.time-employee-table td:nth-child(2) { width: 112px; }
 .time-employee-table th:nth-child(3),.time-employee-table td:nth-child(3) { width: 120px; }
 .time-employee-table th:nth-child(4),.time-employee-table td:nth-child(4) { width: 76px; }
-.time-employee-table th:nth-child(5),.time-employee-table td:nth-child(5) { width: 104px; }
-.time-employee-table th:nth-child(6),.time-employee-table td:nth-child(6),.time-employee-table th:nth-child(7),.time-employee-table td:nth-child(7) { width: 118px; }
-.time-employee-table th:nth-child(8),.time-employee-table td:nth-child(8) { width: 114px; }
-.time-employee-table th:nth-child(9),.time-employee-table td:nth-child(9) { width: 220px; }
-.time-employee-table th:nth-child(10),.time-employee-table td:nth-child(10) { width: 110px; }
+.time-employee-table th:nth-child(5),.time-employee-table td:nth-child(5) { width: 92px; }
+.time-employee-table th:nth-child(6),.time-employee-table td:nth-child(6) { width: 104px; }
+.time-employee-table th:nth-child(7),.time-employee-table td:nth-child(7),.time-employee-table th:nth-child(8),.time-employee-table td:nth-child(8) { width: 118px; }
+.time-employee-table th:nth-child(9),.time-employee-table td:nth-child(9) { width: 114px; }
+.time-employee-table th:nth-child(10),.time-employee-table td:nth-child(10) { width: 188px; }
+.time-employee-table th:nth-child(11),.time-employee-table td:nth-child(11) { width: 110px; }
 .time-employee-table td:not(:first-child) { overflow: hidden; text-overflow: ellipsis; }
 .time-employee-table tr.disabled-row { opacity: .58; }
 .time-employee-record-link { border: 0; background: transparent; color: inherit; padding: 0; text-align: left; }

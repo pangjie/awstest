@@ -2,7 +2,7 @@ import { getPool } from "./index";
 import { generateEmployeeId } from "../lib/timekeeping/employee-id";
 
 let initialization:Promise<void>|null=null;
-const TIMEKEEPING_SCHEMA_VERSION=4;
+const TIMEKEEPING_SCHEMA_VERSION=5;
 const SCHEMA_LOCK="neiku-timekeeping-schema";
 
 export function ensureTimekeepingSchema(){
@@ -121,8 +121,17 @@ async function initialize(){
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       ALTER TABLE time_employees ADD COLUMN IF NOT EXISTS employee_code TEXT;
+      ALTER TABLE time_employees ADD COLUMN IF NOT EXISTS default_work_item_id INTEGER;
       ALTER TABLE time_work_items ADD COLUMN IF NOT EXISTS interrupted_at TIMESTAMPTZ;
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='time_employees_default_work_item_fk') THEN
+          ALTER TABLE time_employees ADD CONSTRAINT time_employees_default_work_item_fk
+            FOREIGN KEY (default_work_item_id) REFERENCES time_work_items(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
       CREATE UNIQUE INDEX IF NOT EXISTS time_employees_code_unique ON time_employees(employee_code);
+      CREATE INDEX IF NOT EXISTS time_employees_default_work_item_idx ON time_employees(default_work_item_id);
       CREATE UNIQUE INDEX IF NOT EXISTS time_shifts_employee_open_unique ON time_shifts(employee_id) WHERE status='open';
       CREATE INDEX IF NOT EXISTS time_shifts_employee_date_idx ON time_shifts(employee_id,work_date);
       CREATE UNIQUE INDEX IF NOT EXISTS time_work_sessions_employee_active_unique ON time_work_sessions(employee_id) WHERE ended_at IS NULL;

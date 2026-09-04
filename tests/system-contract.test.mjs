@@ -133,7 +133,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
     "app/timekeeping/timekeeping-module.tsx","app/timekeeping/scan-page.tsx","app/timekeeping/card-scan-page.tsx","app/timekeeping/daily-timeline.ts","app/timekeeping/dashboard-page.tsx","app/timekeeping/wave-display.tsx",
     "app/timekeeping/records-page.tsx","app/timekeeping/employees-page.tsx",
     "app/api/v1/timekeeping/scan/route.ts","app/api/v1/timekeeping/card-scan/route.ts","app/api/v1/timekeeping/dashboard/route.ts",
-    "app/api/v1/timekeeping/records/route.ts","app/api/v1/timekeeping/employees/route.ts",
+    "app/api/v1/timekeeping/records/route.ts","app/api/v1/timekeeping/employees/route.ts","app/api/v1/timekeeping/employees/attendance-export/route.ts",
     "app/api/v1/timekeeping/waves/route.ts","app/api/v1/timekeeping/revision/route.ts",
   ];
   const sources=await Promise.all(paths.map(async path=>[path,await read(path)]));
@@ -146,9 +146,12 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
     assert.match(schema,new RegExp(`"${table}"`),`${table} must be registered in the isolated schema`);
     assert.match(runtime,new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`),`${table} must be created additively`);
   }
-  assert.match(runtime,/TIMEKEEPING_SCHEMA_VERSION=4/);
+  assert.match(runtime,/TIMEKEEPING_SCHEMA_VERSION=5/);
   assert.match(runtime,/ADD COLUMN IF NOT EXISTS employee_code TEXT/);
+  assert.match(runtime,/ADD COLUMN IF NOT EXISTS default_work_item_id INTEGER/);
+  assert.match(runtime,/FOREIGN KEY \(default_work_item_id\) REFERENCES time_work_items\(id\) ON DELETE SET NULL/);
   assert.match(runtime,/ADD COLUMN IF NOT EXISTS interrupted_at TIMESTAMPTZ/);
+  assert.match(schema,/defaultWorkItemId:integer\("default_work_item_id"\)/);
   assert.match(schema,/interruptedAt:utcTimestamp\("interrupted_at"\)/);
   assert.match(runtime,/pg_advisory_lock/);
   assert.match(runtime,/JOB-SCAN/);
@@ -179,10 +182,16 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.equal(employeeIds.isValidEmployeeId(generatedEmployeeId),true);
   assert.equal(employeeIds.isValidEmployeeId(generatedEmployeeId.slice(0,4)),true,"legacy IDs stay readable during rollback");
   const employeesPage=await read("app/timekeeping/employees-page.tsx");
-  for(const label of ["Sign In","Sign Out","最早 Sign In","最晚 Sign Out","当日不在岗"])assert.match(employeesPage,new RegExp(label));
+  for(const label of ["Sign In","Sign Out","职能","最早 Sign In","最晚 Sign Out","当日不在岗"])assert.match(employeesPage,new RegExp(label));
   assert.match(employeesPage,/todayOffDutyMs/);
   assert.doesNotMatch(employeesPage,/thisWeekMs|lastWeekMs|label="本周"|label="上周"/);
-  for(const field of ["badgeCode","name","type","attendanceState","todayFirstSignIn","todayLastSignOut","todayOffDutyMs","currentProject","todayMs"])assert.match(employeesPage,new RegExp(`field="${field}"`));
+  for(const field of ["badgeCode","name","type","defaultWorkItem","attendanceState","todayFirstSignIn","todayLastSignOut","todayOffDutyMs","currentProject","todayMs"])assert.match(employeesPage,new RegExp(`field="${field}"`));
+  assert.match(employeesPage,/tasks=\{data\?\.standardTasks\?\?\[\]\}/);
+  assert.match(employeesPage,/tasks\.map\(task=><option value=\{task\.id\}/);
+  assert.match(await read("lib/timekeeping/read-model.ts"),/WHERE work_type='standard' AND status='active' ORDER BY sort_order,id/);
+  const employeesRoute=await read("app/api/v1/timekeeping/employees/route.ts");
+  assert.match(employeesRoute,/defaultWorkItemId:normalizeDefaultWorkItemId\(item\.defaultWorkItemId\)/);
+  assert.match(employeesRoute,/eq\(timeWorkItems\.workType,"standard"\)/);
   assert.doesNotMatch(employeesPage,/useState<.*Sort.*>\(/);
   assert.match(app,/useState<EmployeeSortState>\(\{key:"name",descending:false\}\)/);
   assert.match(app,/employeeSort=\{timeEmployeeSort\} setEmployeeSort=\{setTimeEmployeeSort\}/);
@@ -197,6 +206,26 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(employeesPage,/isAdmin&&<button className="time-secondary"/);
   assert.match(employeesPage,/导出扫描素材/);
   assert.match(employeesPage,/\/api\/v1\/timekeeping\/employees\/export/);
+  for(const label of ["考勤导出","整个自然月","上半月（1–15日）","下半月（16日–月末）","导出 Excel"])assert.match(employeesPage,new RegExp(label));
+  assert.match(employeesPage,/\/api\/v1\/timekeeping\/employees\/attendance-export/);
+  assert.match(employeesPage,/const headers=\["姓名","组织","日期","星期",\.\.\.attendanceHeaders\]/);
+  assert.match(employeesPage,/\[`Sign In \$\{index\+1\}`,`Sign Out \$\{index\+1\}`\]/);
+  assert.match(employeesPage,/record\.pairs\.flatMap/);
+  assert.match(employeesPage,/\* 表示该考勤时间曾被修改/);
+  assert.doesNotMatch(employeesPage,/\["序号","姓名","组织","日期","星期","性质"/);
+  const attendanceExportRoute=await read("app/api/v1/timekeeping/employees/attendance-export/route.ts");
+  assert.match(attendanceExportRoute,/authorizePageAccess\("time-employees"\)/);
+  assert.match(attendanceExportRoute,/readAttendanceExport/);
+  assert.match(attendanceExportRoute,/0\[1-9\]\|1\[0-2\]/);
+  const attendanceReadModel=await read("lib/timekeeping/read-model.ts");
+  const attendanceExportSource=attendanceReadModel.slice(attendanceReadModel.indexOf("export async function readAttendanceExport"),attendanceReadModel.indexOf("export async function readDashboard"));
+  assert.match(attendanceExportSource,/FROM time_shifts shift JOIN time_employees employee/);
+  assert.match(attendanceExportSource,/const key=`\$\{row\.employee_id\}:\$\{row\.work_date\}`/);
+  assert.match(attendanceExportSource,/record\.pairs\.push/);
+  assert.doesNotMatch(attendanceExportSource,/time_work_sessions|work_item|wave|project/i);
+  const timekeepingTime=await read("lib/timekeeping/time.ts");
+  assert.match(timekeepingTime,/scope==="first-half"[\s\S]*endDate:`\$\{month\.id\}-15`/);
+  assert.match(timekeepingTime,/scope==="second-half"[\s\S]*startDate:`\$\{month\.id\}-16`/);
   assert.match(app,/setTimeScanBadge\(badge\);setActive\("任务分发"\)/);
   assert.doesNotMatch(employeesPage,/action==="sign_out"&&!window\.confirm/);
   assert.doesNotMatch(employeesPage,/员工主数据|员工 ID 由系统自动生成|className="time-toolbar"/);
@@ -225,7 +254,8 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(timekeepingData,/eq\(timeShifts\.workDate,today\)/);
   assert.match(timekeepingData,/const pausedStandard=latestTodaySession\?\.workType==="standard"&&latestTodaySession\.status==="active"\?latestTodaySession:null/);
   assert.match(timekeepingData,/currentProject=activeSession\?\?pausedStandard\?\?attachedWave/);
-  assert.match(scanLogic,/snapshot\.currentProject\?await findActiveWorkItem\(tx,snapshot\.currentProject\.code\):null/);
+  assert.match(scanLogic,/snapshot\.currentProject[\s\S]*snapshot\.employee\.defaultWorkItemId[\s\S]*findDefaultWorkItem\(tx,snapshot\.employee\.defaultWorkItemId\)/);
+  assert.match(scanLogic,/findDefaultWorkItem[\s\S]*eq\(timeWorkItems\.workType,"standard"\)/);
   assert.match(scanLogic,/CLOCK_IN_PROJECT_RESUME/);
   assert.match(scanLogic,/今天再次 Sign In 后继续/);
   assert.match(scanLogic,/已完结，计时已结束/);
@@ -353,7 +383,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(dashboardPage,/if-none-match/);
   assert.match(dashboardPage,/REVISION_POLL_MS=10_000/);
   assert.doesNotMatch(dashboardPage,/setInterval\([^)]*timeApi<DashboardResponse>/s);
-  for(const label of ["波次数量","波次状态","未开启","当前","已完成","工作总时长","波次工时","工作汇总"]) {
+  for(const label of ["波次数量","波次状态","未开启","当前","已完成","工时统计","在岗时长","工作时长","波次工时","工作汇总"]) {
     assert.match(dashboardPage,new RegExp(label));
   }
   assert.doesNotMatch(dashboardPage,/数据健康|anomalies|time-dashboard-health/);
@@ -372,11 +402,14 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(dashboardPage,/员工统计/);
   assert.match(dashboardPage,/<small>员工总数 \{total\}<\/small>/);
   for(const label of ["拣货","仓务","待命"])assert.match(dashboardPage,new RegExp(`<small>${label}<\\/small>`));
-  assert.match(dashboardPage,/employeeKpis:\{total:data\?\.attendance\.length\?\?0,picking:pickingEmployees\.size,warehouse:warehouseEmployees\.size,standby\}/);
+  assert.match(dashboardPage,/employeeKpis:\{total:attendance\.length,picking:pickingEmployees\.size,warehouse:warehouseEmployees\.size,standby\}/);
   assert.match(dashboardPage,/for\(const item of projects\)for\(const person of item\.participants\)if\(person\.active\)pickingEmployees\.add\(person\.employeeId\)/);
   assert.match(dashboardPage,/task\.code==="SCAN"\|\|task\.code==="SINGLE-SCAN"\?pickingEmployees:warehouseEmployees/);
   assert.match(dashboardPage,/for\(const employeeId of pickingEmployees\)warehouseEmployees\.delete\(employeeId\)/);
   assert.doesNotMatch(dashboardPage,/const picking=totals\?\.waveActiveCount/);
+  assert.match(dashboardPage,/const onDutyMs=attendance\.reduce\(\(sum,employee\)=>sum\+employee\.onDutyMs,0\)\+liveElapsed\*attendance\.filter\(employee=>employee\.clockOut===null\)\.length/);
+  assert.match(dashboardPage,/WorkHoursMetric onDutyMs=\{taskTotals\.onDutyMs\} productiveMs=\{taskTotals\.totalMs\}/);
+  assert.doesNotMatch(dashboardPage,/人当前计时|人处理波次/);
   for(const note of ["日期范围内曾 Sign In","正在处理波次、混件扫描或单件扫描"])assert.match(dashboardPage,new RegExp(note));
   assert.match(dashboardPage,/employee:participantOptions\(projects\)/);
   assert.match(dashboardPage,/employee:"员工"/);

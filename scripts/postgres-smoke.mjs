@@ -47,9 +47,11 @@ assert.match(cookie,/^neiku_session=/);
 
 const initialTimeEmployees=await request("/api/v1/timekeeping/employees");
 assert.equal(initialTimeEmployees.payload.ok,true);
+const warehouseFunction=initialTimeEmployees.payload.standardTasks.find(item=>item.code==="WAREHOUSE");
+assert.ok(warehouseFunction);
 const timeEmployeeName=`E2E工时-${suffix}`;
 const createdTimeEmployee=await request("/api/v1/timekeeping/employees",{
-  method:"POST",expected:201,body:{name:timeEmployeeName,type:"OZM"},
+  method:"POST",expected:201,body:{name:timeEmployeeName,type:"OZM",defaultWorkItemId:warehouseFunction.id},
 });
 const timeBadge=createdTimeEmployee.payload.employees[0].badgeCode;
 assert.match(timeBadge,/^[34679CFHKMNRVWXY]{8}$/);
@@ -70,7 +72,8 @@ const scanId=label=>`e2e-${suffix}-${label}`;
 const identified=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:timeBadge,requestId:scanId("identify"),terminalId:"e2e"}});
 assert.equal(identified.payload.event,"CLOCK_IN_PENDING");
 const clockedIn=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-CLOCKIN",employeeId:identified.payload.employeeId,requestId:scanId("in"),terminalId:"e2e"}});
-assert.equal(clockedIn.payload.event,"CLOCK_IN");
+assert.equal(clockedIn.payload.event,"CLOCK_IN_PROJECT_START");
+assert.equal(clockedIn.payload.snapshot.currentProject.code,"WAREHOUSE");
 const fixedWork=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"JOB-SCAN",employeeId:identified.payload.employeeId,requestId:scanId("fixed"),terminalId:"e2e"}});
 assert.equal(fixedWork.payload.event,"PROJECT_START");
 const waveWork=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:timeWaveNo,employeeId:identified.payload.employeeId,requestId:scanId("wave"),terminalId:"e2e"}});
@@ -114,6 +117,11 @@ const clockedOut=await request("/api/v1/timekeeping/scan",{method:"POST",body:{c
 assert.equal(clockedOut.payload.event,"CLOCK_OUT");
 const timeDashboard=await request("/api/v1/timekeeping/dashboard");
 assert.ok(timeDashboard.payload.attendance.some(item=>item.name===timeEmployeeName));
+const attendanceExport=await request(`/api/v1/timekeeping/employees/attendance-export?period=${timeDashboard.payload.date.slice(0,7)}&scope=${Number(timeDashboard.payload.date.slice(8,10))<=15?"first-half":"second-half"}`);
+const exportedAttendance=attendanceExport.payload.records.find(item=>item.employeeName===timeEmployeeName&&item.workDate===timeDashboard.payload.date);
+assert.ok(exportedAttendance);
+assert.ok(exportedAttendance.pairs.length>=2);
+assert.ok(attendanceExport.payload.records.every(item=>!("workType" in item)&&!("project" in item)&&!("badgeCode" in item)&&!("nature" in item)));
 const timeReport=await request(`/api/v1/timekeeping/records?badge=${timeBadge}`);
 assert.equal(timeReport.payload.snapshot.employee.badgeCode,timeBadge);
 assert.ok(timeReport.payload.projects.length>=2);
@@ -315,6 +323,7 @@ await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-CLOCKIN"
 await request("/api/v1/timekeeping/dashboard",{expected:403});
 await request("/api/v1/timekeeping/records?badge=3467",{expected:403});
 await request("/api/v1/timekeeping/employees",{expected:403});
+await request("/api/v1/timekeeping/employees/attendance-export?period=2026-09&scope=month",{expected:403});
 await request("/api/v1/timekeeping/waves",{expected:403});
 await request("/api/auth/logout",{method:"POST"});
 await request("/api/v1/bootstrap",{expected:401});

@@ -68,7 +68,7 @@ export async function getEmployeeSnapshot(identifier:number|string,db:Pick<Datab
   const attendanceEnd=shift?now:todayShifts.length?Math.max(...todayShifts.map(item=>new Date(item.clockOut??item.clockIn).getTime())):now;
   const state=!employee.active?"inactive":shift?(activeSession?"working":"ready"):todayShifts.length?"off":"not_started";
   return {
-    employee:{id:employee.id,badgeCode:employee.employeeCode??employee.badgeCode,name:employee.name,type:employee.organizationType,active:employee.active},
+    employee:{id:employee.id,badgeCode:employee.employeeCode??employee.badgeCode,name:employee.name,type:employee.organizationType,active:employee.active,defaultWorkItemId:employee.defaultWorkItemId},
     state,
     shift:shift?{id:shift.id,workDate:shift.workDate,clockIn:shift.clockIn,clockOut:shift.clockOut}:null,
     currentProject:currentProject?{id:currentProject.workItemId,code:currentProject.code,name:currentProject.name,workType:currentProject.workType,waveNo:currentProject.waveNo,status:currentProject.status,assignmentRole:currentProject.role??null,startedAt:currentProject.startedAt}:null,
