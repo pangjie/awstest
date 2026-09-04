@@ -2,16 +2,17 @@ import { getPool } from "../../db";
 import { ensureTimekeepingSchema } from "../../db/timekeeping-runtime";
 import { getEmployeeSnapshot, getTimeRevision, reconcileStaleOpenShifts } from "./data";
 import { dashboardRangeBounds } from "./dashboard-range";
-import { durationMs, monthRange, workDate } from "./time";
+import { attendanceExportRange, durationMs, monthRange, workDate, type AttendanceExportScope } from "./time";
 
 type Timestamp=string|Date;
-type EmployeeRow={id:number;badge_code:string;name:string;organization_type:"OZM"|"JJC";active:boolean;created_at:Timestamp};
+type EmployeeRow={id:number;badge_code:string;name:string;organization_type:"OZM"|"JJC";active:boolean;created_at:Timestamp;default_work_item_id?:number|null;default_work_code?:string|null;default_work_name?:string|null};
 type ShiftRow={id:number;employee_id:number;work_date:string;clock_in:Timestamp;clock_out:Timestamp|null;status:"open"|"closed"};
 type SessionRow={id:number;shift_id:number;employee_id:number;work_item_id:number;started_at:Timestamp;ended_at:Timestamp|null;shift_clock_in:Timestamp;shift_clock_out:Timestamp|null;work_date:string};
 type SessionEditRow={id:number;request_id:string;session_id:number;work_date:string;session_field:"started_at"|"ended_at";old_timestamp:Timestamp;new_timestamp:Timestamp;note:string;editor_username:string;edited_at:Timestamp;work_code:string;work_name:string};
 type WorkItemRow={id:number;barcode:string;code:string;name:string;client:string;work_type:"wave"|"standard";wave_no:string|null;channel_name:string;channel_type:string;sku_count:number;order_count:number;piece_count:number;sort_order:number;status:"active"|"completed";interrupted_at:Timestamp|null;completed_at:Timestamp|null;created_at:Timestamp};
 type ParticipantRow=SessionRow&{badge_code:string;employee_name:string;assignment_role:"lead"|"helper"|null};
 type ScanEventRow={id:string;event_type:string;outcome:string;response_payload:unknown;occurred_at:Timestamp;operator_username:string;employee_id:number|null;employee_name:string|null};
+type AttendanceExportRow={id:number;employee_id:number;employee_name:string;organization_type:"OZM"|"JJC";work_date:string;clock_in:Timestamp;clock_out:Timestamp|null;clock_in_modified:boolean;clock_out_modified:boolean};
 
 export async function readEmployees(){
   await ensureTimekeepingSchema();
@@ -19,9 +20,11 @@ export async function readEmployees(){
   const today=workDate();
   const now=new Date();
   const pool=getPool();
-  const [employeesResult,shiftsResult,currentResult]=await Promise.all([
-    pool.query<EmployeeRow>(`SELECT id,COALESCE(employee_code,badge_code) AS badge_code,name,organization_type,active,created_at
-      FROM time_employees ORDER BY active DESC,organization_type,COALESCE(employee_code,badge_code)`),
+  const [employeesResult,shiftsResult,currentResult,standardTasksResult]=await Promise.all([
+    pool.query<EmployeeRow>(`SELECT employee.id,COALESCE(employee.employee_code,employee.badge_code) AS badge_code,employee.name,employee.organization_type,employee.active,employee.created_at,
+        employee.default_work_item_id,default_work.code AS default_work_code,default_work.name AS default_work_name
+      FROM time_employees employee LEFT JOIN time_work_items default_work ON default_work.id=employee.default_work_item_id AND default_work.work_type='standard' AND default_work.status='active'
+      ORDER BY employee.active DESC,employee.organization_type,COALESCE(employee.employee_code,employee.badge_code)`),
     pool.query<ShiftRow>(`SELECT id,employee_id,work_date,clock_in,clock_out,status FROM time_shifts
       WHERE work_date=$1 ORDER BY clock_in`,[today]),
     pool.query<{employee_id:number;code:string;name:string;active:boolean}>(`SELECT latest.employee_id,latest.code,latest.name,
@@ -30,6 +33,8 @@ export async function readEmployees(){
         FROM time_work_sessions ws JOIN time_work_items wi ON wi.id=ws.work_item_id JOIN time_shifts s ON s.id=ws.shift_id
         WHERE s.work_date=$1 ORDER BY ws.employee_id,ws.started_at DESC,ws.id DESC
       ) latest WHERE (latest.ended_at IS NULL AND latest.shift_status='open') OR (latest.work_type='standard' AND latest.item_status='active')`,[today]),
+    pool.query<{id:number;code:string;name:string}>(`SELECT id,code,name FROM time_work_items
+      WHERE work_type='standard' AND status='active' ORDER BY sort_order,id`),
   ]);
   const currentByEmployee=new Map(currentResult.rows.map(row=>[row.employee_id,{code:row.code,name:row.name,active:row.active}]));
   return {
@@ -48,6 +53,7 @@ export async function readEmployees(){
       const attendanceEnd=open?now:todayLastSignOut??todayFirstSignIn;
       return {
         id:employee.id,badgeCode:employee.badge_code,name:employee.name,type:employee.organization_type,active:employee.active,
+        defaultWorkItem:employee.default_work_item_id&&employee.default_work_code&&employee.default_work_name?{id:employee.default_work_item_id,code:employee.default_work_code,name:employee.default_work_name}:null,
         attendanceState:!employee.active?"inactive":open?(currentProject?.active?"working":"ready"):todayShifts.length?"off":"not_started",
         currentProject:currentProject?{code:currentProject.code,name:currentProject.name}:null,
         todayFirstSignIn:toIsoOrNull(todayFirstSignIn),
@@ -57,6 +63,7 @@ export async function readEmployees(){
         createdAt:toIso(employee.created_at),
       };
     }),
+    standardTasks:standardTasksResult.rows,
   };
 }
 
@@ -121,6 +128,28 @@ export async function readTodayScanOperations(){
     const tone=["success","info","warning","error"].includes(String(payload.tone))?String(payload.tone) as "success"|"info"|"warning"|"error":row.outcome==="ok"?"info" as const:"warning" as const;
     return {id:row.id,time:toIso(row.occurred_at),event:row.event_type,tone,message:typeof payload.message==="string"?payload.message:row.event_type,employeeId:row.employee_id,employeeName:row.employee_name??"未识别员工",operator:row.operator_username};
   });
+}
+
+export async function readAttendanceExport(period:string,scope:AttendanceExportScope){
+  await ensureTimekeepingSchema();
+  await reconcileStaleOpenShifts();
+  const range=attendanceExportRange(period,scope);
+  const result=await getPool().query<AttendanceExportRow>(`SELECT shift.id,shift.employee_id,employee.name AS employee_name,employee.organization_type,shift.work_date,shift.clock_in,shift.clock_out,
+      EXISTS (SELECT 1 FROM time_attendance_edits edit WHERE edit.shift_id=shift.id AND edit.attendance_field='clock_in') AS clock_in_modified,
+      EXISTS (SELECT 1 FROM time_attendance_edits edit WHERE edit.shift_id=shift.id AND edit.attendance_field='clock_out') AS clock_out_modified
+    FROM time_shifts shift JOIN time_employees employee ON employee.id=shift.employee_id
+    WHERE shift.work_date BETWEEN $1 AND $2 ORDER BY shift.work_date,employee.name,shift.clock_in,shift.id`,[range.startDate,range.endDate]);
+  const records=new Map<string,{employeeName:string;type:"OZM"|"JJC";workDate:string;pairs:Array<{signIn:string;signOut:string|null;signInModified:boolean;signOutModified:boolean}>}>();
+  for(const row of result.rows){
+    const key=`${row.employee_id}:${row.work_date}`;
+    const record=records.get(key)??{employeeName:row.employee_name,type:row.organization_type,workDate:row.work_date,pairs:[]};
+    record.pairs.push({signIn:toIso(row.clock_in),signOut:toIsoOrNull(row.clock_out),signInModified:row.clock_in_modified,signOutModified:row.clock_out_modified});
+    records.set(key,record);
+  }
+  return {
+    ok:true as const,generatedAt:new Date().toISOString(),range:{scope:range.scope,label:range.label,startDate:range.startDate,endDate:range.endDate},
+    records:[...records.values()],
+  };
 }
 
 export async function readDashboard(requestedStartDate?:string|null,requestedEndDate?:string|null){

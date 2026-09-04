@@ -37,6 +37,13 @@ export function localDateTimeToIso(value:string){
 
 export function addDays(date:string,amount:number){const value=new Date(`${date}T12:00:00Z`);value.setUTCDate(value.getUTCDate()+amount);return value.toISOString().slice(0,10)}
 export function monthRange(period:string|undefined,today=workDate()){const requested=/^\d{4}-\d{2}$/.test(period??"")?period!:today.slice(0,7);const [year,month]=requested.split("-").map(Number);const startDate=`${requested}-01`;const next=new Date(Date.UTC(year,month,1,12));const nextId=next.toISOString().slice(0,7);const end=new Date(Date.UTC(year,month,0,12));const previous=new Date(Date.UTC(year,month-2,1,12)).toISOString().slice(0,7);return {id:requested,label:`${year}年${String(month).padStart(2,"0")}月`,startDate,endDate:end.toISOString().slice(0,10),previous,next:nextId}}
+export type AttendanceExportScope="month"|"first-half"|"second-half";
+export function attendanceExportRange(period:string,scope:AttendanceExportScope){
+  const month=monthRange(period);
+  if(scope==="first-half")return {...month,scope,label:`${month.label}上半月`,endDate:`${month.id}-15`};
+  if(scope==="second-half")return {...month,scope,label:`${month.label}下半月`,startDate:`${month.id}-16`};
+  return {...month,scope,label:month.label};
+}
 export function durationMs(start:string|Date,end:string|Date){return Math.max(0,new Date(end).getTime()-new Date(start).getTime())}
 
 function timekeepingParts(value:Date){

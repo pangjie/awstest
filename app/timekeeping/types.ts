@@ -1,15 +1,17 @@
 export type EmployeeSnapshot={
-  employee:{id:number;badgeCode:string;name:string;type:"OZM"|"JJC";active:boolean};
+  employee:{id:number;badgeCode:string;name:string;type:"OZM"|"JJC";active:boolean;defaultWorkItemId:number|null};
   shift:{id:number;workDate:string;clockIn:string;clockOut:string|null}|null;
   state:"inactive"|"not_started"|"off"|"ready"|"working";
   currentProject:{id:number;code:string;name:string;workType:"wave"|"standard";waveNo:string|null;status:string;assignmentRole:"lead"|"helper"|null;startedAt:string}|null;
   today:{onDutyMs:number;productiveMs:number;offDutyMs:number};
 };
 
-export type EmployeeRecord={id:number;badgeCode:string;name:string;type:"OZM"|"JJC";active:boolean;attendanceState:string;currentProject:{code:string;name:string}|null;todayFirstSignIn:string|null;todayLastSignOut:string|null;todayOffDutyMs:number;todayMs:number;createdAt:string};
-export type EmployeesResponse={ok:true;generatedAt:string;period:{today:string};employees:EmployeeRecord[]};
-export type EmployeeSortKey="badgeCode"|"name"|"type"|"attendanceState"|"todayFirstSignIn"|"todayLastSignOut"|"todayOffDutyMs"|"currentProject"|"todayMs";
+export type EmployeeRecord={id:number;badgeCode:string;name:string;type:"OZM"|"JJC";active:boolean;defaultWorkItem:{id:number;code:string;name:string}|null;attendanceState:string;currentProject:{code:string;name:string}|null;todayFirstSignIn:string|null;todayLastSignOut:string|null;todayOffDutyMs:number;todayMs:number;createdAt:string};
+export type EmployeesResponse={ok:true;generatedAt:string;period:{today:string};employees:EmployeeRecord[];standardTasks:Array<{id:number;code:string;name:string}>};
+export type EmployeeSortKey="badgeCode"|"name"|"type"|"defaultWorkItem"|"attendanceState"|"todayFirstSignIn"|"todayLastSignOut"|"todayOffDutyMs"|"currentProject"|"todayMs";
 export type EmployeeSortState={key:EmployeeSortKey;descending:boolean};
+export type AttendanceExportScope="month"|"first-half"|"second-half";
+export type AttendanceExportResponse={ok:true;generatedAt:string;range:{scope:AttendanceExportScope;label:string;startDate:string;endDate:string};records:Array<{employeeName:string;type:"OZM"|"JJC";workDate:string;pairs:Array<{signIn:string;signOut:string|null;signInModified:boolean;signOutModified:boolean}>}>};
 
 export type WorkParticipant={employeeId:number;badgeCode:string;name:string;totalMs:number;firstStartedAt:string;lastEndedAt:string|null;sessionCount:number;active:boolean;onDuty:boolean;role:"lead"|"helper"};
 export type WorkItem={id:number;barcode:string;code:string;waveNo:string|null;name:string;client:string;channelName:string;channelType:string;workType:"wave"|"standard";skuCount:number;orderCount:number;pieceCount:number;sortOrder:number;status:"active"|"completed";interruptedAt:string|null;createdAt:string;completedAt:string|null;startedAt:string|null;lastEndedAt:string|null;totalMs:number;employeeCount:number;activeCount:number;participants:WorkParticipant[]};
