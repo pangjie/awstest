@@ -30,6 +30,12 @@ resource "aws_instance" "web" {
     delete_on_termination = true
   }
 
+  lifecycle {
+    # The public "latest" AMI parameter changes independently of this project.
+    # Replace the production instance only as a separately reviewed upgrade.
+    ignore_changes = [ami]
+  }
+
   tags = { Name = "${var.project_name}-web" }
 
   depends_on = [aws_route_table_association.public]

@@ -9,7 +9,7 @@ import { warehouseDateKey } from "../../../../lib/warehouse-time";
 import { recordWarehouseRevision } from "../../../../lib/warehouse-revision";
 
 export async function GET(request:NextRequest) {
-  const access=await authorizePageAccess("tasks");
+  const access=await authorizePageAccess("tasks","mobile-tasks");
   if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   if(request.nextUrl.searchParams.get("detail")==="1") {
     return NextResponse.json({data:await getTaskDetailRows("all")},{headers:{"cache-control":"no-store"}});
@@ -81,17 +81,19 @@ export async function POST(request:NextRequest) {
       const claimed=await tx.update(pallets).set({status:"in_task",updatedAt:claimedAt})
         .where(and(eq(pallets.status,"in_stock"),inArray(pallets.id,palletIds))).returning({id:pallets.id});
       if(claimed.length!==palletIds.length)return {error:"部分托盘已被其他设备加入任务，请刷新后重新选择",status:409 as const};
-      await tx.insert(tasks).values({
-        id,type:body.type!,status:"pending",priority:body.priority??"normal",dueAt:body.dueAt??null,
+      const taskIds=body.type==="pick"?requestedItems.map((_,index)=>index===0?id:`TK-${warehouseDateKey(now).slice(2).replaceAll("-","")}-${crypto.randomUUID().slice(0,6).toUpperCase()}`):[id];
+      const taskIdByPalletId=new Map(requestedItems.map((item,index)=>[item.palletId,body.type==="pick"?taskIds[index]:id]));
+      await tx.insert(tasks).values(taskIds.map(taskId=>({
+        id:taskId,type:body.type!,status:"pending" as const,priority:body.priority??"normal",dueAt:body.dueAt??null,
         note:body.note??null,createdById:user.id,createdAt:claimedAt,
-      });
+      })));
       await tx.insert(taskItems).values(resolvedPallets.map(p=>({
-        taskId:id,palletId:p.id,skuId:p.skuId,fromLocationId:p.locationId,
+        taskId:taskIdByPalletId.get(p.id)!,palletId:p.id,skuId:p.skuId,fromLocationId:p.locationId,
         toLocationId:targetByPalletId.get(p.id)!,plannedQuantity:0,returnedQuantity:0,
         note:body.type==="pick"?(noteByPalletId.get(p.id)??""):null,
       })));
       await recordWarehouseRevision(tx);
-      return {data:{id,status:"pending" as const}};
+      return {data:{id,ids:taskIds,count:taskIds.length,status:"pending" as const}};
     });
     if("error" in result)return NextResponse.json({error:{message:result.error}},{status:result.status});
     return NextResponse.json(result,{status:201});

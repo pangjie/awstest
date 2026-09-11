@@ -63,7 +63,7 @@ export async function GET() {
     .where(and(sql`${taskItems.resolvedAt} IS NOT NULL`,gte(taskItems.resolvedAt,recentStart)));
 
   const needsPallets=canSee("dashboard","reserve-inventory","warehouse-ledger");
-  const needsTasks=canSee("dashboard","tasks");
+  const needsTasks=canSee("dashboard","tasks","mobile-tasks");
   const needsLocations=canSee("dashboard","reserve-inventory","location-management","warehouse-ledger");
   const needsMovements=canSee("dashboard","warehouse-ledger");
   const needsInvalidSkus=canSee("dashboard","reserve-inventory","sku-management","warehouse-ledger","tasks");

@@ -36,6 +36,11 @@ output "database_secret_arn" {
   value       = aws_db_instance.postgres.master_user_secret[0].secret_arn
 }
 
+output "database_credential_refresh_rule_name" {
+  description = "EventBridge rule that refreshes the application after RDS credential rotation."
+  value       = aws_cloudwatch_event_rule.database_credential_changed.name
+}
+
 output "initial_admin_secret_arn" {
   description = "Secret containing the generated first-login administrator credentials; its value is never a Terraform output."
   value       = aws_secretsmanager_secret.initial_admin.arn

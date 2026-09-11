@@ -11,7 +11,7 @@ type CompletionResult=
   |{data:{id:string;status:string;palletId?:string;itemOutcome?:string;allConfirmed?:boolean}};
 
 export async function POST(request:NextRequest,{params}:{params:Promise<{taskId:string}>}) {
-  const access=await authorizePageAccess("dashboard","tasks");
+  const access=await authorizePageAccess("dashboard","tasks","mobile-tasks");
   if(!access.authorized)return NextResponse.json({error:{message:access.message}},{status:access.status});
   const user=access.user;
   const {taskId}=await params;

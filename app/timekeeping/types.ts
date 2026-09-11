@@ -22,6 +22,8 @@ export type DashboardFilterKey="channel"|"type"|"state"|"employee";
 export type DashboardFilters=Record<DashboardFilterKey,string[]>;
 export type DashboardSortKey="default"|"duration"|"efficiency";
 export type DashboardSortState={key:DashboardSortKey;descending:boolean};
+export type ScanWaveSortKey="default"|"channel"|"type"|"waveNo"|"state"|"duration";
+export type ScanWaveSortState={key:ScanWaveSortKey;descending:boolean};
 
 export type ScanResponse={ok:boolean;event:string;message:string;tone:"success"|"info"|"warning"|"error";duplicate?:boolean;employeeId?:number;snapshot?:EmployeeSnapshot;contextExpiresAt?:number};
 
