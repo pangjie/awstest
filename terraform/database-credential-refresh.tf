@@ -1,5 +1,6 @@
 resource "aws_ssm_document" "refresh_database_credentials" {
-  name            = "${var.project_name}-refresh-database-credentials"
+  # SSM reserves document names beginning with "aws", including our project name.
+  name            = "project-${var.project_name}-refresh-database-credentials"
   document_type   = "Command"
   document_format = "JSON"
   target_type     = "/AWS::EC2::Instance"
