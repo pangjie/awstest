@@ -1,16 +1,16 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { isValidEmployeeId } from "@/lib/timekeeping/employee-id";
 import { timeApi } from "./api";
 import { formatClock, formatClockWithSeconds, formatDurationWithSeconds, stateLabel } from "./format";
-import type { EmployeeSnapshot, ScanResponse, WorkItem, WorkItemsResponse } from "./types";
-import { WaveChannelTag, WaveTypeTag } from "./wave-display";
+import type { EmployeeSnapshot, ScanWaveSortKey, ScanWaveSortState, ScanResponse, WorkItem, WorkItemsResponse } from "./types";
+import { channelLabel, waveTypeInfo, WaveChannelTag, WaveTypeTag } from "./wave-display";
 
 type ScanSelection={key:string;code:string;label:string;projectId?:number;extra?:Record<string,unknown>;confirmMessage?:string};
 
-export default function ScanPage({titleTarget,initialBadge}:{titleTarget:HTMLDivElement|null;initialBadge:string}){
+export default function ScanPage({titleTarget,initialBadge,sortState,setSortState}:{titleTarget:HTMLDivElement|null;initialBadge:string;sortState:ScanWaveSortState;setSortState:Dispatch<SetStateAction<ScanWaveSortState>>}){
   const [code,setCode]=useState(initialBadge);
   const [snapshot,setSnapshot]=useState<EmployeeSnapshot|null>(null);
   const [workItems,setWorkItems]=useState<WorkItemsResponse|null>(null);
@@ -101,7 +101,7 @@ export default function ScanPage({titleTarget,initialBadge}:{titleTarget:HTMLDiv
       <section className="time-card time-task-picker">
         <div className="time-card-title"><div><h3>选择任务</h3><p>只有在岗员工可以开始计时</p></div></div>
         <h4>固定任务</h4><div className="time-task-buttons">{workItems?.standardTasks.map(item=>{const isCurrent=snapshot?.currentProject?.id===item.id;const selected=selection?.projectId===item.id;return <button type="button" key={item.id} className={[isCurrent?"current":"",selected?"selected":""].filter(Boolean).join(" ")||undefined} aria-current={isCurrent?"true":undefined} aria-pressed={selected} disabled={pending||!snapshot} onClick={()=>selectItem(item)}><b>{item.name}</b><span>{snapshot?.shift?item.code:snapshot?`Sign In · ${item.code}`:"扫描员工后可用"}</span></button>})}{workItems&&workItems.standardTasks.length===0&&<p className="time-empty">暂无固定任务</p>}</div>
-        <h4>当前波次</h4><ScanWaveTable items={workItems?.currentWaves??[]} currentProjectId={snapshot?.currentProject?.id??null} selectedProjectId={selection?.projectId??null} disabled={pending||!snapshot} selectItem={selectItem}/>{workItems&&workItems.currentWaves.length===0&&<p className="time-empty">暂无当前波次</p>}
+        <h4>当前波次</h4><ScanWaveTable sortState={sortState} setSortState={setSortState} items={workItems?.currentWaves??[]} currentProjectId={snapshot?.currentProject?.id??null} selectedProjectId={selection?.projectId??null} disabled={pending||!snapshot} selectItem={selectItem}/>{workItems&&workItems.currentWaves.length===0&&<p className="time-empty">暂无当前波次</p>}
       </section>
     </div>
 
@@ -109,7 +109,30 @@ export default function ScanPage({titleTarget,initialBadge}:{titleTarget:HTMLDiv
   </div>;
 }
 
-function ScanWaveTable({items,currentProjectId,selectedProjectId,disabled,selectItem}:{items:WorkItem[];currentProjectId:number|null;selectedProjectId:number|null;disabled:boolean;selectItem:(item:WorkItem)=>void}){
+function ScanWaveTable({items,sortState,setSortState,currentProjectId,selectedProjectId,disabled,selectItem}:{items:WorkItem[];sortState:ScanWaveSortState;setSortState:Dispatch<SetStateAction<ScanWaveSortState>>;currentProjectId:number|null;selectedProjectId:number|null;disabled:boolean;selectItem:(item:WorkItem)=>void}){
   if(!items.length)return null;
-  return <div className="time-table-wrap time-scan-wave-wrap"><table className="time-table time-scan-wave-table"><thead><tr><th>渠道</th><th>类型</th><th>波次号</th><th>状态</th><th>SKU</th><th>订单</th><th>件数</th><th>负责人</th><th>波次工时</th></tr></thead><tbody>{items.map(item=>{const lead=item.participants.find(person=>person.role==="lead");const state=item.interruptedAt?"中断":item.activeCount?"进行中":item.startedAt?"暂停":"未开始";const classes=[item.id===currentProjectId?"current":"",item.id===selectedProjectId?"selected":"",item.interruptedAt?"interrupted":""].filter(Boolean).join(" ");return <tr key={item.id} className={classes||undefined}><td><WaveChannelTag value={item.channelName}/></td><td><WaveTypeTag value={item.channelType}/></td><td><button type="button" className="time-scan-wave-select" disabled={disabled} onClick={()=>selectItem(item)}>{item.waveNo??item.code}</button></td><td><span className={`time-state ${item.interruptedAt?"interrupted":item.activeCount?"working":item.startedAt?"off":"ready"}`}>{state}</span></td><td>{item.skuCount}</td><td>{item.orderCount}</td><td>{item.pieceCount}</td><td>{lead?.name??"—"}</td><td><b>{formatDurationWithSeconds(item.totalMs)}</b></td></tr>})}</tbody></table></div>;
+  const changeSort=(key:ScanWaveSortKey)=>setSortState(current=>({key,descending:current.key===key?!current.descending:false}));
+  const sortHead=(key:Exclude<ScanWaveSortKey,"default">,label:string)=>{
+    const active=sortState.key===key;
+    return <th aria-sort={active?(sortState.descending?"descending":"ascending"):"none"}><button type="button" className="time-sort" aria-label={`按${label}排序`} onClick={()=>changeSort(key)}><span>{label}</span><i aria-hidden="true">{active?(sortState.descending?"↓":"↑"):"↕"}</i></button></th>;
+  };
+  const orderedItems=sortState.key==="default"?items:[...items].sort((left,right)=>{
+    const a=scanWaveSortValue(left,sortState.key),b=scanWaveSortValue(right,sortState.key);
+    const result=typeof a==="number"&&typeof b==="number"?a-b:String(a).localeCompare(String(b),"zh-CN",{numeric:true,sensitivity:"base"});
+    return sortState.descending?-result:result;
+  });
+  return <div className="time-table-wrap time-scan-wave-wrap"><table className="time-table time-scan-wave-table"><thead><tr>{sortHead("channel","渠道")}{sortHead("type","类型")}{sortHead("waveNo","波次号")}{sortHead("state","状态")}<th>SKU</th><th>订单</th><th>件数</th><th>负责人</th>{sortHead("duration","波次工时")}</tr></thead><tbody>{orderedItems.map(item=>{const lead=item.participants.find(person=>person.role==="lead");const state=scanWaveState(item);const classes=[item.id===currentProjectId?"current":"",item.id===selectedProjectId?"selected":"",item.interruptedAt?"interrupted":""].filter(Boolean).join(" ");return <tr key={item.id} className={classes||undefined}><td><WaveChannelTag value={item.channelName}/></td><td><WaveTypeTag value={item.channelType}/></td><td><button type="button" className="time-scan-wave-select" disabled={disabled} onClick={()=>selectItem(item)}>{item.waveNo??item.code}</button></td><td><span className={`time-state ${item.interruptedAt?"interrupted":item.activeCount?"working":item.startedAt?"off":"ready"}`}>{state}</span></td><td>{item.skuCount}</td><td>{item.orderCount}</td><td>{item.pieceCount}</td><td>{lead?.name??"—"}</td><td><b>{formatDurationWithSeconds(item.totalMs)}</b></td></tr>})}</tbody></table></div>;
+}
+
+function scanWaveState(item:WorkItem){return item.interruptedAt?"中断":item.activeCount?"进行中":item.startedAt?"暂停":"未开始"}
+
+function scanWaveSortValue(item:WorkItem,key:ScanWaveSortKey):string|number{
+  switch(key){
+    case "channel":return channelLabel(item.channelName);
+    case "type":return waveTypeInfo(item.channelType).label;
+    case "waveNo":return item.waveNo??item.code;
+    case "state":return scanWaveState(item);
+    case "duration":return item.totalMs;
+    case "default":return item.sortOrder;
+  }
 }

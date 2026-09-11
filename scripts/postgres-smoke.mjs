@@ -205,6 +205,30 @@ const pickCompletion=await request(`/api/v1/tasks/${encodeURIComponent(pickTask.
 assert.equal(pickCompletion.payload.data.allConfirmed,true);
 assert.equal(pickCompletion.payload.data.status,"returned");
 
+await request("/api/v1/tasks",{
+  method:"POST",expected:400,
+  body:{type:"pick",pickItems:[{palletId:pickPallet,toLocationCode:pick},{palletId:movePallet,toLocationCode:`MISSING-${suffix}`}]},
+});
+const independentPicks=await request("/api/v1/tasks",{
+  method:"POST",expected:201,
+  body:{type:"pick",pickItems:[{palletId:pickPallet,toLocationCode:pick,note:"独立任务一"},{palletId:movePallet,toLocationCode:pick,note:"独立任务二"}]},
+});
+const independentIds=independentPicks.payload.data.ids;
+assert.equal(independentPicks.payload.data.count,2);
+assert.equal(new Set(independentIds).size,2);
+assert.equal(independentPicks.payload.data.id,independentIds[0]);
+const independentDetails=(await request("/api/v1/tasks?detail=1")).payload.data;
+for(const [index,palletId] of [pickPallet,movePallet].entries()){
+  const rows=independentDetails.filter(row=>row.id===independentIds[index]);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].palletId,palletId);
+  assert.equal(rows[0].itemNote,index===0?"独立任务一":"独立任务二");
+}
+await request(`/api/v1/tasks/${independentIds[0]}/complete`,{method:"POST",body:{outcome:"returned",palletId:pickPallet}});
+const remainingPick=(await request("/api/v1/tasks?detail=1")).payload.data.find(row=>row.id===independentIds[1]);
+assert.equal(remainingPick.status,"pending");
+await request(`/api/v1/tasks/${independentIds[1]}/complete`,{method:"POST",body:{outcome:"returned",palletId:movePallet}});
+
 const createdUser=await request("/api/v1/users",{
   method:"POST",expected:201,
   body:{username:restrictedUsername,password:restrictedPassword,pagePermissions:["reserve-inventory"]},
@@ -328,4 +352,29 @@ await request("/api/v1/timekeeping/waves",{expected:403});
 await request("/api/auth/logout",{method:"POST"});
 await request("/api/v1/bootstrap",{expected:401});
 
-console.log("PostgreSQL smoke flow passed: auth, page permissions, timekeeping scan/employee/wave/report/dashboard, location/SKU/reserve/cross-system ledger imports, inbound, move, pick return, users and histories.");
+await request("/api/auth/login",{method:"POST",authenticated:false,body:{username,password}});
+const mobileUsername=`mobile-${suffix.toLowerCase()}`;
+await request("/api/v1/users",{method:"POST",expected:201,body:{username:mobileUsername,password:restrictedPassword,pagePermissions:["mobile-tasks"]}});
+const mobilePick=await request("/api/v1/tasks",{method:"POST",expected:201,body:{type:"pick",pickItems:[{palletId:pickPallet,toLocationCode:pick}]}});
+const mobileTarget=`E2E-MOBILE-${suffix}`;
+await request("/api/v1/locations",{method:"POST",body:{action:"import",rows:[{code:mobileTarget,type:"reserve",capacity:2,sourceRow:2}]}});
+const mobileMove=await request("/api/v1/tasks",{method:"POST",expected:201,body:{type:"move",moveItems:[{palletId:movePallet,toLocationCode:mobileTarget}]}});
+await request("/api/auth/logout",{method:"POST"});
+await request("/api/auth/login",{method:"POST",authenticated:false,body:{username:mobileUsername,password:restrictedPassword}});
+const mobileBootstrap=(await request("/api/v1/bootstrap")).payload.data;
+assert.deepEqual(mobileBootstrap.currentUser.pagePermissions,["mobile-tasks"]);
+assert.ok(mobileBootstrap.tasks.some(task=>task.id===mobilePick.payload.data.id));
+assert.equal(mobileBootstrap.pallets.length,0);
+await request("/api/v1/users",{expected:403});
+await request("/api/v1/tasks",{method:"POST",expected:403,body:{type:"pick"}});
+await request(`/api/v1/tasks/${mobilePick.payload.data.id}/complete`,{method:"POST",body:{palletId:pickPallet,outcome:"partial"}});
+await request(`/api/v1/tasks/${mobilePick.payload.data.id}/complete`,{method:"POST",expected:409,body:{palletId:pickPallet,outcome:"completed"}});
+await request(`/api/v1/tasks/${mobileMove.payload.data.id}/complete`,{method:"POST",expected:400,body:{outcome:"partial"}});
+await request(`/api/v1/tasks/${mobileMove.payload.data.id}/complete`,{method:"POST",body:{outcome:"completed"}});
+const mobileHistory=(await request("/api/v1/tasks?detail=1")).payload.data;
+assert.equal(mobileHistory.find(row=>row.id===mobilePick.payload.data.id).itemOutcome,"partial");
+assert.equal(mobileHistory.find(row=>row.id===mobileMove.payload.data.id).status,"completed");
+assert.ok(mobileHistory.some(row=>row.id===pickTask.payload.data.id&&row.status==="returned"));
+await request("/api/auth/logout",{method:"POST"});
+
+console.log("PostgreSQL smoke flow passed, including mobile-only task access, completion and duplicate-submit protection.");

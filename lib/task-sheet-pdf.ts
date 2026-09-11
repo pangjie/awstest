@@ -5,6 +5,7 @@ import { formatWarehouseTime } from "./warehouse-time";
 export type WarehouseTaskSheetType = "store" | "pick" | "move";
 
 export type WarehouseTaskSheetRow = {
+  taskId?: string;
   sku: string;
   fromLocation: string;
   toLocation: string;
@@ -24,8 +25,9 @@ const TYPE_NAMES: Record<WarehouseTaskSheetType, string> = {
   move: "迁移备货",
 };
 
-export async function printWarehouseTaskSheet(input: WarehouseTaskSheetInput) {
-  if (!input.rows.length) throw new Error("作业单没有可打印的明细");
+export async function printWarehouseTaskSheet(input: WarehouseTaskSheetInput | WarehouseTaskSheetInput[]) {
+  const sheets=Array.isArray(input)?input:[input];
+  if (!sheets.some(sheet=>sheet.rows.length)) throw new Error("作业单没有可打印的明细");
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   iframe.style.position = "fixed";
@@ -58,8 +60,9 @@ export async function printWarehouseTaskSheet(input: WarehouseTaskSheetInput) {
   }, 60_000);
 }
 
-export function buildPrintDocument(input: WarehouseTaskSheetInput) {
-  const pages = chunk(input.rows, ROWS_PER_PAGE);
+export function buildPrintDocument(input: WarehouseTaskSheetInput | WarehouseTaskSheetInput[]) {
+  const sheets=Array.isArray(input)?input:[input];
+  const pages = sheets.flatMap(sheet=>chunk(sheet.rows, ROWS_PER_PAGE).map(rows=>({...sheet,rows})));
   const generatedAt = formatWarehouseTime(new Date(), {
     year: "numeric",
     month: "2-digit",
@@ -68,10 +71,12 @@ export function buildPrintDocument(input: WarehouseTaskSheetInput) {
     minute: "2-digit",
     hour12: false,
   });
+  const body = pages.map((input, pageIndex) => {
+  const rows=input.rows;
   const title = `内库 · ${TYPE_NAMES[input.type]}作业单`;
   const targetHeader = input.type === "pick" ? "主库位" : input.type === "move" ? "目标备货库位" : "备货库位";
   const sourceHeader = input.type === "store" ? "起始库位" : "备货库位";
-  const body = pages.map((rows, pageIndex) => `
+  return `
     <section class="sheet-page">
       <header>
         <h1>${escapeHtml(title)}</h1>
@@ -98,7 +103,7 @@ export function buildPrintDocument(input: WarehouseTaskSheetInput) {
         </tr></thead>
         <tbody>
           ${rows.map(row => `<tr>
-            <td class="sku">${escapeHtml(row.sku)}</td>
+            <td class="sku">${escapeHtml(row.sku)}${row.taskId?`<small class="row-task-id">${escapeHtml(row.taskId)}</small>`:""}</td>
             <td class="location">${escapeHtml(row.fromLocation)}</td>
             <td class="location">${escapeHtml(row.toLocation)}</td>
             <td>${resultChoices(input.type)}</td>
@@ -107,13 +112,13 @@ export function buildPrintDocument(input: WarehouseTaskSheetInput) {
           ${Array.from({ length: ROWS_PER_PAGE - rows.length }, () => `<tr class="blank-row"><td></td><td></td><td></td><td></td><td></td></tr>`).join("")}
         </tbody>
       </table>
-    </section>`).join("");
+    </section>`}).join("");
 
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>${escapeHtml(`内库-${TYPE_NAMES[input.type]}作业单-${input.taskId}`)}</title>
+  <title>${escapeHtml(sheets.length===1?`内库-${TYPE_NAMES[sheets[0].type]}作业单-${sheets[0].taskId}`:"内库-待处理备货作业单")}</title>
   <style>
     @page { size: Letter landscape; margin: 0.35in 0.4in; }
     * { box-sizing: border-box; }
@@ -135,6 +140,7 @@ export function buildPrintDocument(input: WarehouseTaskSheetInput) {
     th { height: 0.45in; padding: 0.06in; background: #fff; font-size: 14pt; font-weight: 800; text-align: center; }
     td { height: 0.58in; padding: 0.07in 0.08in; font-size: 15.5pt; font-weight: 650; overflow-wrap: anywhere; }
     td.sku { font-size: 18pt; font-weight: 800; }
+    .row-task-id { display: block; margin-top: 0.04in; font-size: 9pt; font-weight: 400; }
     td.location { font-size: 17pt; font-weight: 750; text-align: center; }
     .result-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 0.05in; }
     .choice { display: inline-flex; align-items: center; gap: 0.035in; font-size: 11pt; font-weight: 700; white-space: nowrap; }

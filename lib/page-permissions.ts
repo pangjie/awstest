@@ -16,6 +16,7 @@ export const TIMEKEEPING_PAGES = [
 export const PAGE_DEFINITIONS = [
   {key:"dashboard",label:"备货操作",icon:"⌂",section:"main"},
   {key:"reserve-inventory",label:"备库总表",icon:"▦",section:"main"},
+  {key:"mobile-tasks",label:"备货待办",icon:"☑",section:"main"},
   ...WAREHOUSE_DATA_TABS,
   ...TIMEKEEPING_PAGES,
 ] as const;
@@ -27,6 +28,7 @@ export type TimekeepingPageKey=(typeof TIMEKEEPING_PAGES)[number]["key"];
 export const NAVIGATION_DEFINITIONS = [
   {key:"dashboard",label:"备货操作",icon:"⌂",group:"warehouse",narrowHidden:false,pagePermissions:["dashboard"]},
   {key:"reserve-inventory",label:"备库总表",icon:"▦",group:"warehouse",narrowHidden:false,pagePermissions:["reserve-inventory"]},
+  {key:"mobile-tasks",label:"备货待办",icon:"☑",group:"warehouse",narrowHidden:false,pagePermissions:["mobile-tasks"]},
   {key:"warehouse-data",label:"备货数据",icon:"◇",group:"warehouse",narrowHidden:false,pagePermissions:WAREHOUSE_DATA_TABS.map(tab=>tab.key)},
   ...TIMEKEEPING_PAGES.map(page=>({...page,group:"timekeeping" as const,narrowHidden:false,pagePermissions:[page.key]})),
 ] as const;

@@ -78,10 +78,10 @@ test("uses one backward-compatible runtime schema path",async()=>{
 test("grants admin every registered page and keeps ordinary accounts explicitly scoped",async()=>{
   const permissions=await loadPure("page-permissions");
   const keys=permissions.PAGE_DEFINITIONS.map(page=>page.key);
-  assert.equal(new Set(keys).size,11);
+  assert.equal(new Set(keys).size,12);
   assert.deepEqual(
     permissions.NAVIGATION_DEFINITIONS.map(page=>page.label),
-    ["备货操作","备库总表","备货数据","任务分发","工卡扫描","现场看板","工作记录","员工数据"],
+    ["备货操作","备库总表","备货待办","备货数据","任务分发","工卡扫描","现场看板","工作记录","员工数据"],
   );
   assert.deepEqual(
     permissions.WAREHOUSE_DATA_TABS.map(page=>page.key),
@@ -721,6 +721,21 @@ test("builds printable Letter task sheets with pagination and HTML escaping",asy
   assert.match(html,/SKU-0&lt;x&gt;/);
   assert.match(html,/A&amp;1/);
   assert.doesNotMatch(html,/TASK<1>|SKU-0<x>|A&1/);
+});
+
+test("prints selected task types together with matching result choices and task identifiers",async()=>{
+  const {buildPrintDocument}=await loadPure("task-sheet-pdf");
+  const row={sku:"SKU-A",fromLocation:"A",toLocation:"B",taskId:"TK<selected>"};
+  const html=buildPrintDocument([{taskId:"批量待处理",type:"pick",rows:[row]},{taskId:"批量待处理",type:"move",rows:[{...row,taskId:"TK-MOVE"}]}]);
+  const pages=html.split('<section class="sheet-page">').slice(1);
+  assert.equal(pages.length,2);
+  assert.match(pages[0],/取备货作业单/);
+  assert.match(pages[0],/全部取出/);
+  assert.match(pages[0],/TK&lt;selected&gt;/);
+  assert.match(pages[1],/迁移备货作业单/);
+  assert.match(pages[1],/simple-result/);
+  assert.doesNotMatch(pages[1],/全部取出/);
+  assert.match(pages[1],/页码：<strong>2 \/ 2<\/strong>/);
 });
 
 test("ships a valid location template and no obsolete asset generator",async()=>{

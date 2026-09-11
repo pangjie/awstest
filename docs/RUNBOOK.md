@@ -47,6 +47,27 @@ npm run test:postgres-smoke
 11. 新版本未在 60 秒内就绪时，部署脚本恢复旧镜像并让工作流失败。
 12. WMS schema 使用 PostgreSQL advisory lock 做幂等初始化，不删除旧 `messages` 表。
 
+GitHub 部署使用 `/run/lock/aws-miniflow-deploy.lock` 串行化容器更换，避免与数据库密码自动刷新同时运行。
+
+## RDS 密码轮换后自动刷新
+
+RDS 托管的主密码轮换时，Secrets Manager 会把 `AWSCURRENT` 移到新版本。EventBridge 只匹配当前 RDS secret ARN 的这个事件，然后通过专用 IAM Role 在当前 EC2 上执行项目的 `refresh-database-credentials` SSM Command 文档。
+
+Command 文档会读取正在运行容器的不可变镜像地址，再调用现有 `deploy-miniflow` 部署器。部署器重新读取 secret，并保留 `/health/ready` 就绪检查和失败回滚。为容忍密码轮换瞬间的短暂不同步，Command 最多尝试三次，尝试之间等待 60 秒。
+
+验证运行历史：
+
+```bash
+RULE_NAME="$(terraform -chdir=terraform output -raw database_credential_refresh_rule_name)"
+aws events describe-rule --region us-east-2 --name "${RULE_NAME}"
+aws ssm list-command-invocations \
+  --region us-east-2 \
+  --details \
+  --max-results 10
+```
+
+不要为测试这条通路而手动修改生产数据库密码。需要主动演练时，应在维护窗口中使用 RDS 受管轮换，并同时观察 SSM 命令历史和站点 `/health/ready`。
+
 ## 手动检查
 
 ```bash
@@ -78,7 +99,7 @@ aws ssm send-command \
   --region us-east-2 \
   --instance-ids "${INSTANCE_ID}" \
   --document-name AWS-RunShellScript \
-  --parameters "commands=sudo /usr/local/bin/deploy-miniflow ${IMAGE_URI}"
+  --parameters "commands=sudo flock --wait 300 /run/lock/aws-miniflow-deploy.lock /usr/local/bin/deploy-miniflow ${IMAGE_URI}"
 ```
 
 数据库变更必须遵循 expand/contract：先添加兼容结构，再发布使用它的版本，最后在所有旧版本退出后移除旧结构。当前 WMS 初始化不删除旧演示应用的 `messages` 表，因此上一镜像仍可以回滚。

@@ -14,9 +14,10 @@ import { normalizeWarehouseLedgerRow, validateWarehouseLedgerHeaders, validateWa
 import { formatWarehouseDateTimeFixed, formatWarehouseTime, parseStoredTimestamp, previousWarehouseDateKey, toWarehouseDateTimeInput, warehouseDateKey, warehouseDateTimeInputToIso } from "@/lib/warehouse-time";
 import { addDays } from "@/lib/timekeeping/time";
 import BrandMark from "./brand-mark";
+import MobileWarehouseTasks from "./mobile-warehouse-tasks";
 import { currentDate } from "./timekeeping/format";
 import TimekeepingModule from "./timekeeping/timekeeping-module";
-import type { DashboardFilters, DashboardSortState, EmployeeSortState } from "./timekeeping/types";
+import type { DashboardFilters, DashboardSortState, EmployeeSortState, ScanWaveSortState } from "./timekeeping/types";
 
 type Role="admin"|"manager"|"operator";
 type SessionUser={id:number;username:string;name:string;role:Role;pagePermissions:PageKey[]};
@@ -203,6 +204,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
   const [editingRow,setEditingRow]=useState<ReserveRow|null>(null);
   const [toast,setToast]=useState("");
   const [externalSyncKey,setExternalSyncKey]=useState(0);
+  const [mobileTaskMenu,setMobileTaskMenu]=useState(false);
   const [timeScanBadge,setTimeScanBadge]=useState("");
   const [timeRecordBadge,setTimeRecordBadge]=useState("");
   const [timeDashboardDate,setTimeDashboardDate]=useState(currentDate);
@@ -210,6 +212,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
   const [timeDashboardExportEndDate,setTimeDashboardExportEndDate]=useState(currentDate);
   const [timeDashboardFilters,setTimeDashboardFilters]=useState<DashboardFilters>({channel:[],type:[],state:[],employee:[]});
   const [timeDashboardSort,setTimeDashboardSort]=useState<DashboardSortState>({key:"default",descending:false});
+  const [timeScanSort,setTimeScanSort]=useState<ScanWaveSortState>({key:"default",descending:false});
   const [timeEmployeeSort,setTimeEmployeeSort]=useState<EmployeeSortState>({key:"name",descending:false});
   const [timeDashboardExportKey,setTimeDashboardExportKey]=useState(0);
   const [timeDashboardImportOpen,setTimeDashboardImportOpen]=useState(false);
@@ -314,13 +317,13 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
     return ()=>{cancelled=true;window.clearTimeout(loadingTimer)};
   },[warehouseDataMounted,allowedPageKeys,modal,loadedRevision,pickLocations]);
   useEffect(()=>{
-    if(!warehouseDataMounted||!allowedPageKeys.has("tasks")||loadedRevision===undefined||taskHistory)return;
+    if(!(warehouseDataMounted&&allowedPageKeys.has("tasks")||active==="备货待办"&&allowedPageKeys.has("mobile-tasks"))||loadedRevision===undefined||taskHistory)return;
     let cancelled=false;
     void fetchAllTaskDetails()
       .then(rows=>{if(!cancelled){setTaskHistory(rows);setTaskHistoryError("")}})
       .catch(loadError=>{if(!cancelled)setTaskHistoryError(loadError instanceof Error?loadError.message:"任务历史加载失败")})
     return ()=>{cancelled=true};
-  },[warehouseDataMounted,allowedPageKeys,loadedRevision,taskHistory]);
+  },[warehouseDataMounted,active,allowedPageKeys,loadedRevision,taskHistory]);
   useEffect(()=>{window.scrollTo({top:0,left:0,behavior:"auto"})},[active,warehouseDataTab]);
   useEffect(()=>{
     const media=window.matchMedia("(max-width: 760px)");
@@ -357,13 +360,14 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
   const currentTaskRows=currentTask?(taskHistory??data!.tasks).filter(task=>task.id===currentTask.id):[];
   const latestCurrentTask=currentTaskRows[0]??currentTask;
 
-  return <main className={`app-shell${portableDevice?" portable-device":""}${active==="工卡扫描"?" mobile-card-mode":""}`}>
+  return <main className={`app-shell${portableDevice?" portable-device":""}${active==="工卡扫描"?" mobile-card-mode":""}${active==="备货待办"?` mobile-task-mode${mobileTaskMenu?" task-menu-open":""}`:""}`}>
+    {active==="备货待办"&&mobileTaskMenu&&<button className="mwt-menu-backdrop" aria-label="关闭页面菜单" onClick={()=>setMobileTaskMenu(false)}/>}
     <aside className="sidebar">
       <div className="sidebar-head">
         <div className="brand"><BrandMark className="brand-mark"/><div><strong>内库</strong><span>WAREHOUSE</span></div></div>
         <SidebarDateTime/>
       </div>
-      <nav>{visiblePages.map((page,index)=><Fragment key={page.key}>{(index===0||visiblePages[index-1].group!==page.group)&&<span className="nav-group-label">{page.group==="warehouse"?"备货体系":"工时体系"}</span>}<button data-nav={page.label} aria-label={page.label} title={page.label} className={active===page.label?"nav-item active":"nav-item"} onClick={()=>{setActive(page.label);setTimeDashboardImportOpen(false);if(page.key==="time-scan")setTimeScanBadge("");if(page.label==="备货数据")setWarehouseDataVisited(true);setSelected([]);setEditingRow(null)}}>
+      <nav>{visiblePages.map((page,index)=><Fragment key={page.key}>{(index===0||visiblePages[index-1].group!==page.group)&&<span className="nav-group-label">{page.group==="warehouse"?"备货体系":"工时体系"}</span>}<button data-nav={page.label} aria-label={page.label} title={page.label} className={active===page.label?"nav-item active":"nav-item"} onClick={()=>{setActive(page.label);setMobileTaskMenu(false);setTimeDashboardImportOpen(false);if(page.key==="time-scan")setTimeScanBadge("");if(page.label==="备货数据")setWarehouseDataVisited(true);setSelected([]);setEditingRow(null)}}>
         <span className="nav-icon">{page.icon}</span>{page.label}{page.key==="warehouse-data"&&allowedPageKeys.has("tasks")&&stats.pendingTasks>0&&<b className="nav-badge">{stats.pendingTasks}</b>}
       </button></Fragment>)}</nav>
       <div className="sidebar-bottom">
@@ -375,6 +379,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
     <section className="workspace" data-page={active}>
       {active!=="备货操作"&&<header><div className="workspace-title"><h1>{active}</h1></div><div className="workspace-title-tools" ref={setTimekeepingTitleTarget}>{activeTimekeepingPage==="time-dashboard"&&<div className="time-dashboard-title-actions"><button className="primary" type="button" onClick={()=>setTimeDashboardImportOpen(true)}>导入波次</button><button className="time-dashboard-current" type="button" onClick={()=>setTimeDashboardDate(currentDate())}>当前波次</button><button className="time-dashboard-day" type="button" onClick={()=>setTimeDashboardDate(date=>addDays(date,-1))}>前一天</button><button className="time-dashboard-day" type="button" onClick={()=>setTimeDashboardDate(date=>addDays(date,1))}>后一天</button><div className="time-dashboard-date-range" role="group" aria-label="导出日期范围"><label className="time-dashboard-date"><span title="仅用于导出">起始日期</span><input aria-label="导出起始日期" title="仅用于导出" type="date" value={timeDashboardExportStartDate} max={timeDashboardExportEndDate} onChange={event=>{const value=event.target.value;if(!value)return;setTimeDashboardExportStartDate(value);if(value>timeDashboardExportEndDate)setTimeDashboardExportEndDate(value)}}/></label><label className="time-dashboard-date"><span title="仅用于导出">终止日期</span><input aria-label="导出终止日期" title="仅用于导出" type="date" value={timeDashboardExportEndDate} min={timeDashboardExportStartDate} onChange={event=>{const value=event.target.value;if(!value)return;setTimeDashboardExportEndDate(value);if(value<timeDashboardExportStartDate)setTimeDashboardExportStartDate(value)}}/></label></div><button className="time-dashboard-export" type="button" onClick={()=>setTimeDashboardExportKey(key=>key+1)}>导出</button></div>}</div></header>}
       <div className="content">
+        {active==="备货待办"&&<MobileWarehouseTasks tasks={taskHistory??data!.tasks} historyLoaded={taskHistory!==null} historyError={taskHistoryError} api={requestApi} refresh={refresh} openMenu={()=>setMobileTaskMenu(current=>!current)}/>}
         {active==="备货操作"&&<Dashboard stats={stats} tasks={pendingTaskGroups} onFlow={setModal} onTask={openTask} openTasks={()=>{setWarehouseDataTab("tasks");setWarehouseDataVisited(true);setActive("备货数据")}} data={data!} invalidSkuCodes={invalidSkuCodes} canOpenTasks={allowedPageKeys.has("tasks")} canOpenLedger={allowedPageKeys.has("warehouse-ledger")} openHistory={()=>{setLedgerEntry({tab:"history",query:""});setWarehouseDataTab("warehouse-ledger");setWarehouseDataVisited(true);setActive("备货数据")}}/>}
         {active==="备库总表"&&<ReserveTable pallets={data!.pallets} locations={data!.locations} selected={selected} setSelected={setSelected} onFlow={openFlow} notify={notify} done={async message=>{notify(message);await refresh()}} onEdit={setEditingRow} onLocation={allowedPageKeys.has("warehouse-ledger")?code=>{setLedgerEntry({tab:"location",query:code});setWarehouseDataTab("warehouse-ledger");setWarehouseDataVisited(true);setActive("备货数据")}:undefined} invalidSkuCodes={invalidSkuCodes}/>}
         {warehouseDataMounted&&<div className="warehouse-data-page" hidden={active!=="备货数据"}>
@@ -388,7 +393,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
         </div>}
         {activeTimekeepingPage&&<TimekeepingModule
           page={activeTimekeepingPage} titleTarget={timekeepingTitleTarget} isAdmin={effectiveUser.role==="admin"}
-          initialScanBadge={timeScanBadge} initialRecordBadge={timeRecordBadge}
+          initialScanBadge={timeScanBadge} initialRecordBadge={timeRecordBadge} scanSort={timeScanSort} setScanSort={setTimeScanSort}
           openScan={allowedPageKeys.has("time-scan")?badge=>{setTimeScanBadge(badge);setActive("任务分发")}:undefined}
           openRecords={allowedPageKeys.has("time-records")?badge=>{setTimeRecordBadge(badge);setActive("工作记录")}:undefined}
           dashboardDate={timeDashboardDate} dashboardExportStartDate={timeDashboardExportStartDate} dashboardExportEndDate={timeDashboardExportEndDate}
@@ -885,15 +890,31 @@ function LedgerMovementTable({rows,location,invalidSkuCodes}:{rows:Movement[];lo
 
 function TasksView({tasks,onTask,invalidSkuCodes,error}:{tasks:TaskGroup[];onTask:(t:Task)=>void;invalidSkuCodes:Set<string>;error:string}) {
   const [tab,setTab]=useState("open");
+  const [selectedIds,setSelectedIds]=useState<string[]>([]);
+  const [printing,setPrinting]=useState(false),[printError,setPrintError]=useState("");
   const lines=tasks.flatMap(group=>group.rows.map((row,index)=>({task:row,index,total:group.rows.length})));
   const pendingGroups=tasks.filter(group=>group.rows.some(row=>taskItemResult(row).key==="pending"));
+  const selectedGroups=pendingGroups.filter(group=>selectedIds.includes(group.task.id));
+  const printSelected=async()=>{
+    setPrinting(true);setPrintError("");
+    try{
+      const sheets=(["store","pick","move"] as const).map(type=>({
+        taskId:"批量待处理",type,
+        rows:selectedGroups.filter(group=>group.task.type===type).flatMap(group=>group.rows.filter(row=>taskItemResult(row).key==="pending").map(row=>({taskId:row.id,sku:row.sku??"",fromLocation:row.fromLocation??"收货暂存区",toLocation:row.toLocation??"",note:row.itemNote??""}))),
+      })).filter(sheet=>sheet.rows.length);
+      await printWarehouseTaskSheet(sheets);
+    }catch(e){setPrintError(e instanceof Error?e.message:"作业单打印失败")}
+    finally{setPrinting(false)}
+  };
   return <section className="panel task-page">
     <div className="tabs task-tabs">
       <button className={tab==="open"?"on":""} onClick={()=>setTab("open")}>待处理 <span>{pendingGroups.length}</span></button>
       <button className={tab==="all"?"on":""} onClick={()=>setTab("all")}>全部 <span>{lines.length}</span></button>
     </div>
     {error&&<div className="management-error">! {error}</div>}
-    {tab==="open"?<div className="task-list">{pendingGroups.length?pendingGroups.map(group=><TaskRow key={group.task.id} task={group.task} rows={group.rows} onClick={()=>onTask(group.task)} invalidSkuCodes={invalidSkuCodes}/>):<Empty text="当前没有待处理任务"/>}</div>:<div className="task-lines-scroll"><div className="task-lines-table">
+    {printError&&<div className="management-error">! {printError}</div>}
+    {tab==="open"&&<div className="task-print-toolbar"><label><input type="checkbox" aria-label="全选待处理任务" checked={pendingGroups.length>0&&selectedGroups.length===pendingGroups.length} disabled={!pendingGroups.length} onChange={event=>setSelectedIds(event.target.checked?pendingGroups.map(group=>group.task.id):[])}/>全选</label><span>已选 {selectedGroups.length} 项</span><button disabled={!selectedGroups.length||printing} onClick={()=>void printSelected()}>{printing?"正在准备打印…":"打印已选任务"}</button></div>}
+    {tab==="open"?<div className="task-list">{pendingGroups.length?pendingGroups.map(group=><div className="task-selectable-row" key={group.task.id}><input type="checkbox" aria-label={`选择任务 ${group.task.id}`} checked={selectedIds.includes(group.task.id)} onChange={event=>setSelectedIds(current=>event.target.checked?[...current,group.task.id]:current.filter(id=>id!==group.task.id))}/><TaskRow task={group.task} rows={group.rows} onClick={()=>onTask(group.task)} invalidSkuCodes={invalidSkuCodes}/></div>):<Empty text="当前没有待处理任务"/>}</div>:<div className="task-lines-scroll"><div className="task-lines-table">
       <div className="task-line-head"><span>任务 / 子任务</span><span>SKU</span><span>备货库位 / 起始库位</span><span>主库位 / 目标库位</span><span>托盘参考</span><span>作业结果</span><span>操作</span></div>
       {lines.length?lines.map(line=><TaskSubtaskRow key={`${line.task.id}-${line.task.palletId??line.index}`} task={line.task} index={line.index} total={line.total} onClick={()=>onTask(line.task)} invalidSkuCodes={invalidSkuCodes}/>):<Empty text="暂无任务明细"/>}
     </div></div>}
@@ -1017,7 +1038,7 @@ function TaskCreateModal({type,pallets,locations,selected,close,done,api,locatio
       {locationsError&&<div className="login-error">! {locationsError}</div>}
       {type==="store"?<><p className="store-guidance">可先添加多行再统一填写。同一库位可按托盘容量分配多行；每行的 SKU 和备货库位为必填，备注说明选填。</p><div className="store-lines"><div className="store-grid-head"><span>SKU <b>*</b></span><span>备注说明</span><span>备货库位 <b>*</b></span><span/></div>{storeRows.map((row,index)=>{const otherAssignments=storeRows.filter(item=>item.key!==row.key).map(item=>item.target);return <div className="store-line" key={row.key}><label><span>SKU *</span><input required aria-label={`SKU ${index+1}`} placeholder="必填" value={row.sku} onChange={e=>updateStore(row.key,{sku:e.target.value.toUpperCase()})}/></label><label><span>备注说明</span><input aria-label={`备注说明 ${index+1}`} placeholder="选填" value={row.remarks} onChange={e=>updateStore(row.key,{remarks:e.target.value})}/></label><label><span>备货库位 *</span><select required aria-label={`备货库位 ${index+1}`} value={row.target} onChange={e=>updateStore(row.key,{target:e.target.value})}><option value="">选择库位</option>{targets.filter(location=>location.code===row.target||targetHasRoom(location.code,otherAssignments)).map(location=><option key={location.id} value={location.code}>{location.code}（余 {availableLocationSlots(location)-otherAssignments.filter(code=>code===location.code).length}）</option>)}</select></label>{storeRows.length>1?<button className="remove-store-line" aria-label={`移除第 ${index+1} 行`} onClick={()=>setStoreRows(rows=>rows.filter(item=>item.key!==row.key))}>移除</button>:<span className="remove-store-placeholder"/>}</div>})}<button className="add-line" disabled={storeAtCapacity} onClick={addStoreRow}>＋ 添加一行</button></div>{storeAtCapacity&&<p className="store-capacity-hint">备货库位已满，无法继续添加。</p>}{storeRows.length>1&&storeMissingSku&&<p className="store-validation-hint">请填写每一行的 SKU 后再存入备货区。</p>}</>
       :type==="pick"?<>
-        <p className="pick-guidance">每行先输入 SKU，再选择该 SKU 的备货库位和主库位；每个子任务均可填写一条独立备注。可一次建立多条取备货明细。</p>
+        <p className="pick-guidance">每行选择 SKU、备货托盘和主库位，可填写独立备注；每行将创建一个独立的取备货待办。</p>
         <datalist id="pick-sku-options">{Array.from(new Set(available.map(p=>p.sku))).sort().map(sku=><option key={sku} value={sku}/>)}</datalist>
         <div className="pick-lines">
           <div className="pick-grid-head"><span>SKU <b>*</b></span><span>备货库位 / 托盘 <b>*</b></span><span>主库位 <b>*</b></span><span/></div>
