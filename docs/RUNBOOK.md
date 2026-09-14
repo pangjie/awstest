@@ -55,6 +55,10 @@ RDS 托管的主密码轮换时，Secrets Manager 会把 `AWSCURRENT` 移到新�
 
 Command 文档会读取正在运行容器的不可变镜像地址，再调用现有 `deploy-miniflow` 部署器。部署器重新读取 secret，并保留 `/health/ready` 就绪检查和失败回滚。为容忍密码轮换瞬间的短暂不同步，Command 最多尝试三次，尝试之间等待 60 秒。
 
+EventBridge 的 Run Command 目标 `input` 必须直接传入文档参数映射；本项目文档没有参数，使用 `{}`。不要包成 `{"Parameters":{}}` 或加入 `DocumentName`：2026-09-12 的实测返回 `INVALID_JSON`，命令不会进入 SSM。文档由目标 ARN 指定。
+
+排查时区分两段：`MatchedEvents` 表示规则匹配，`FailedInvocations` 表示目标投递失败；SSM 命令成功且 `/health/ready` 正常才表示刷新成功。资源创建成功不能替代端到端验证。可使用临时自定义事件规则复用生产目标、角色和输入参数验证投递（会重启当前容器，不修改密码），验证后删除临时资源。
+
 验证运行历史：
 
 ```bash

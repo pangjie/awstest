@@ -105,7 +105,9 @@ resource "aws_cloudwatch_event_target" "database_credential_refresh" {
   target_id = "RefreshDatabaseCredentials"
   arn       = aws_ssm_document.refresh_database_credentials.arn
   role_arn  = aws_iam_role.database_credential_refresh.arn
-  input     = jsonencode({ Parameters = {} })
+  # Run Command expects the document parameter map directly, not a SendCommand envelope.
+  # This document has no parameters; its ARN above selects the document.
+  input = jsonencode({})
 
   run_command_targets {
     key    = "InstanceIds"

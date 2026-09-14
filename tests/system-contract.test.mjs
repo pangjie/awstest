@@ -36,6 +36,15 @@ test("keeps CI on dev and production deployment behind a merged main PR",async()
   assert.doesNotMatch(`${ci}\n${deploy}`,/AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY/);
 });
 
+test("passes an empty document parameter map to EventBridge and serializes credential refresh",async()=>{
+  const refresh=await read("terraform/database-credential-refresh.tf");
+  assert.match(refresh,/arn\s*=\s*aws_ssm_document\.refresh_database_credentials\.arn/);
+  assert.match(refresh,/input\s*=\s*jsonencode\(\{\}\)/);
+  assert.doesNotMatch(refresh,/Parameters\s*=|DocumentName\s*=/);
+  assert.match(refresh,/flock --wait 300 9/);
+  assert.match(refresh,/labelUpdated = \["AWSCURRENT"\]/);
+});
+
 test("separates process liveness from database readiness",async()=>{
   const [live,ready]=await Promise.all([read("app/health/live/route.ts"),read("app/health/ready/route.ts")]);
   assert.doesNotMatch(live,/database|isDatabaseReady|getPool/i);
