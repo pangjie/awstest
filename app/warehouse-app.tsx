@@ -359,10 +359,12 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
   const stats=data!.stats;
   const currentTaskRows=currentTask?(taskHistory??data!.tasks).filter(task=>task.id===currentTask.id):[];
   const latestCurrentTask=currentTaskRows[0]??currentTask;
+  const mobileWarehousePage=active==="备货待办"||active==="备货操作"||active==="备库总表";
 
-  return <main className={`app-shell${portableDevice?" portable-device":""}${active==="工卡扫描"?" mobile-card-mode":""}${active==="备货待办"?` mobile-task-mode${mobileTaskMenu?" task-menu-open":""}`:""}`}>
-    {active==="备货待办"&&mobileTaskMenu&&<button className="mwt-menu-backdrop" aria-label="关闭页面菜单" onClick={()=>setMobileTaskMenu(false)}/>}
+  return <main className={`app-shell${portableDevice?" portable-device":""}${active==="工卡扫描"?" mobile-card-mode":""}${mobileWarehousePage?` mobile-task-mode${mobileTaskMenu?" task-menu-open":""}`:""}`}>
+    {mobileWarehousePage&&mobileTaskMenu&&<button className="mwt-menu-backdrop" aria-label="关闭页面菜单" onClick={()=>setMobileTaskMenu(false)}/>}
     <aside className="sidebar">
+      {mobileWarehousePage&&<button className="warehouse-mobile-menu-close" onClick={()=>setMobileTaskMenu(false)}>✕ 关闭菜单</button>}
       <div className="sidebar-head">
         <div className="brand"><BrandMark className="brand-mark"/><div><strong>内库</strong><span>WAREHOUSE</span></div></div>
         <SidebarDateTime/>
@@ -371,7 +373,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
         <span className="nav-icon">{page.icon}</span>{page.label}{page.key==="warehouse-data"&&allowedPageKeys.has("tasks")&&stats.pendingTasks>0&&<b className="nav-badge">{stats.pendingTasks}</b>}
       </button></Fragment>)}</nav>
       <div className="sidebar-bottom">
-        {effectiveUser.role==="admin"&&<button className="nav-item" onClick={()=>setModal("accounts")}><span className="nav-icon">⚙</span>账户管理<span className="admin-tag">ADMIN</span></button>}
+        {effectiveUser.role==="admin"&&<button className="nav-item" onClick={()=>{setMobileTaskMenu(false);setModal("accounts")}}><span className="nav-icon">⚙</span>账户管理<span className="admin-tag">ADMIN</span></button>}
         <div className="user"><div className="avatar">{effectiveUser.name.slice(0,1)}</div><div><strong>{effectiveUser.name}</strong><span>{roleName(effectiveUser.role)}</span></div>
           <button aria-label="退出登录" title="退出登录" onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});location.reload()}}>↪</button></div>
       </div>
@@ -379,6 +381,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
     <section className="workspace" data-page={active}>
       {active!=="备货操作"&&<header><div className="workspace-title"><h1>{active}</h1></div><div className="workspace-title-tools" ref={setTimekeepingTitleTarget}>{activeTimekeepingPage==="time-dashboard"&&<div className="time-dashboard-title-actions"><button className="primary" type="button" onClick={()=>setTimeDashboardImportOpen(true)}>导入波次</button><button className="time-dashboard-current" type="button" onClick={()=>setTimeDashboardDate(currentDate())}>当前波次</button><button className="time-dashboard-day" type="button" onClick={()=>setTimeDashboardDate(date=>addDays(date,-1))}>前一天</button><button className="time-dashboard-day" type="button" onClick={()=>setTimeDashboardDate(date=>addDays(date,1))}>后一天</button><div className="time-dashboard-date-range" role="group" aria-label="导出日期范围"><label className="time-dashboard-date"><span title="仅用于导出">起始日期</span><input aria-label="导出起始日期" title="仅用于导出" type="date" value={timeDashboardExportStartDate} max={timeDashboardExportEndDate} onChange={event=>{const value=event.target.value;if(!value)return;setTimeDashboardExportStartDate(value);if(value>timeDashboardExportEndDate)setTimeDashboardExportEndDate(value)}}/></label><label className="time-dashboard-date"><span title="仅用于导出">终止日期</span><input aria-label="导出终止日期" title="仅用于导出" type="date" value={timeDashboardExportEndDate} min={timeDashboardExportStartDate} onChange={event=>{const value=event.target.value;if(!value)return;setTimeDashboardExportEndDate(value);if(value<timeDashboardExportStartDate)setTimeDashboardExportStartDate(value)}}/></label></div><button className="time-dashboard-export" type="button" onClick={()=>setTimeDashboardExportKey(key=>key+1)}>导出</button></div>}</div></header>}
       <div className="content">
+        {(active==="备货操作"||active==="备库总表")&&<div className="warehouse-mobile-toolbar"><h1>{active}</h1><button type="button" aria-label="打开页面菜单" aria-expanded={mobileTaskMenu} onClick={()=>setMobileTaskMenu(current=>!current)}>☰ 菜单</button></div>}
         {active==="备货待办"&&<MobileWarehouseTasks tasks={taskHistory??data!.tasks} historyLoaded={taskHistory!==null} historyError={taskHistoryError} api={requestApi} refresh={refresh} openMenu={()=>setMobileTaskMenu(current=>!current)}/>}
         {active==="备货操作"&&<Dashboard stats={stats} tasks={pendingTaskGroups} onFlow={setModal} onTask={openTask} openTasks={()=>{setWarehouseDataTab("tasks");setWarehouseDataVisited(true);setActive("备货数据")}} data={data!} invalidSkuCodes={invalidSkuCodes} canOpenTasks={allowedPageKeys.has("tasks")} canOpenLedger={allowedPageKeys.has("warehouse-ledger")} openHistory={()=>{setLedgerEntry({tab:"history",query:""});setWarehouseDataTab("warehouse-ledger");setWarehouseDataVisited(true);setActive("备货数据")}}/>}
         {active==="备库总表"&&<ReserveTable pallets={data!.pallets} locations={data!.locations} selected={selected} setSelected={setSelected} onFlow={openFlow} notify={notify} done={async message=>{notify(message);await refresh()}} onEdit={setEditingRow} onLocation={allowedPageKeys.has("warehouse-ledger")?code=>{setLedgerEntry({tab:"location",query:code});setWarehouseDataTab("warehouse-ledger");setWarehouseDataVisited(true);setActive("备货数据")}:undefined} invalidSkuCodes={invalidSkuCodes}/>}

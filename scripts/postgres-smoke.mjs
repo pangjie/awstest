@@ -107,6 +107,12 @@ const helperClockedOut=await request("/api/v1/timekeeping/scan",{method:"POST",b
 assert.match(helperClockedOut.payload.message,/计时已暂停/);
 assert.doesNotMatch(helperClockedOut.payload.message,/计时已结束/);
 const scanOperations=await request("/api/v1/timekeeping/scan");
+const refreshedEmployee=await request(`/api/v1/timekeeping/scan?employeeId=${helperIdentified.payload.employeeId}`);
+assert.equal(refreshedEmployee.payload.snapshot.employee.id,helperIdentified.payload.employeeId);
+assert.equal(refreshedEmployee.payload.snapshot.shift,null);
+assert.equal(refreshedEmployee.payload.todayOperations.length,scanOperations.payload.todayOperations.length);
+assert.equal(typeof refreshedEmployee.payload.revision,"number");
+await request("/api/v1/timekeeping/scan?employeeId=invalid",{expected:400});
 assert.ok(scanOperations.payload.todayOperations.some(item=>item.id===scanId("helper-out")&&/计时已暂停/.test(item.message)));
 const leaderResumed=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:timeWaveNo,employeeId:identified.payload.employeeId,requestId:scanId("leader-resume"),terminalId:"e2e"}});
 assert.equal(leaderResumed.payload.snapshot.currentProject.assignmentRole,"lead");

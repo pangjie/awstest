@@ -56,6 +56,31 @@ test("separates process liveness from database readiness",async()=>{
   await assert.rejects(read("app/api/v1/health/route.ts"),error=>error?.code==="ENOENT");
 });
 
+test("shares the mobile drawer across warehouse operations, reserve and tasks without a desktop menu button",async()=>{
+  const [app,css]=await Promise.all([read("app/warehouse-app.tsx"),read("app/warehouse-enhancements.css")]);
+  assert.match(app,/mobileWarehousePage=active==="备货待办"\|\|active==="备货操作"\|\|active==="备库总表"/);
+  assert.match(app,/\(active==="备货操作"\|\|active==="备库总表"\)&&<div className="warehouse-mobile-toolbar"><h1>\{active\}<\/h1>/);
+  assert.match(css,/\.app-shell\.mobile-task-mode \.workspace\[data-page="备库总表"\] > header \{ display: none; \}/);
+  assert.match(app,/mobileWarehousePage&&mobileTaskMenu/);
+  assert.match(app,/warehouse-mobile-toolbar/);
+  assert.match(css,/\.warehouse-mobile-toolbar,\.warehouse-mobile-menu-close \{ display: none; \}/);
+  assert.match(css,/@media\(max-width: 1024px\) \{\s*\.warehouse-mobile-toolbar \{ display: flex;/);
+});
+
+test("refreshes task dispatch through read-only snapshots while ticking locally",async()=>{
+  const [page,route]=await Promise.all([read("app/timekeeping/scan-page.tsx"),read("app/api/v1/timekeeping/scan/route.ts")]);
+  assert.match(page,/performance\.now\(\)-baselineRef\.current/);
+  assert.match(page,/item\.totalMs\+elapsed\*item\.activeCount/);
+  assert.match(page,/snapshot\.state==="working"/);
+  assert.match(page,/if-none-match/);
+  assert.match(page,/setInterval\(\(\)=>void refresh\(\),10_000\)/);
+  assert.match(page,/selectionContextRef\.current!==selectionContext\(snapshot\)/);
+  assert.match(page,/case "duration":return item\.totalMs/);
+  const get=route.split("export async function GET")[1].split("export async function POST")[0];
+  assert.match(get,/getEmployeeSnapshot/);
+  assert.doesNotMatch(get,/performScan|recordEvent/);
+});
+
 test("allows same-origin card scanning while denying unrelated device access",async()=>{
   const nextConfig=await read("next.config.mjs");
   assert.match(nextConfig,/Permissions-Policy", value: "camera=\(self\), microphone=\(\), geolocation=\(\)"/);
