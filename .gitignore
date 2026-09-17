@@ -18,3 +18,9 @@ terraform/override.tf
 terraform/override.tf.json
 terraform/*_override.tf
 terraform/*_override.tf.json
+terraform-alt/.terraform/
+terraform-alt/*.tfstate
+terraform-alt/*.tfstate.*
+terraform-alt/*.tfvars
+terraform-alt/tfplan*
+terraform-alt/crash.log

@@ -1,3 +1,9 @@
+variable "expected_account_id" {
+  description = "Optional account guard. Refuse to plan/apply with credentials for another account."
+  type        = string
+  default     = null
+}
+
 variable "project_name" {
   description = "Prefix used for project resources."
   type        = string
@@ -93,6 +99,17 @@ variable "allowed_http_cidrs" {
   description = "IPv4 CIDRs allowed to access the demo website over HTTP."
   type        = list(string)
   default     = ["0.0.0.0/0"]
+}
+
+variable "database_backup_retention_days" {
+  description = "Automated RDS backup retention in days. Keep backups enabled."
+  type        = number
+  default     = 7
+
+  validation {
+    condition     = var.database_backup_retention_days >= 1 && var.database_backup_retention_days <= 35 && floor(var.database_backup_retention_days) == var.database_backup_retention_days
+    error_message = "database_backup_retention_days must be an integer from 1 to 35."
+  }
 }
 
 variable "database_deletion_protection" {

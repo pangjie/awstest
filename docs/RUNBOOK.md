@@ -32,6 +32,29 @@ npm run test:postgres-smoke
 
 ## 部署流程
 
+### 两个账户独立部署
+
+备用账户使用免费计划，RDS 自动备份保留期经确认设为 1 天；原生产环境默认仍为 7 天。此设置不保证其他资源均满足免费计划限制，也不代表所有资源免费。
+
+备用账户 `391016433211` 的基础设施入口为 `terraform-alt/`，通过本地模块复用 `terraform/` 的资源定义，但使用自己的 state 和 provider 锁文件。始终使用独立 profile：
+
+```bash
+AWS_PROFILE=aws-miniflow-alt terraform -chdir=terraform-alt init
+AWS_PROFILE=aws-miniflow-alt terraform -chdir=terraform-alt plan -out=tfplan
+# 仅在用户审阅并确认该计划后执行：
+AWS_PROFILE=aws-miniflow-alt terraform -chdir=terraform-alt apply tfplan
+```
+
+配置固定校验备用账户 ID，误用当前生产凭证会被拒绝。不要在原 `terraform/` 目录下切换账户 apply，也不要复制生产 state。备用 state 仍是本地文件，应安全保管且不可提交 Git。备用 RDS 开启删除保护；CloudFront 提供浏览器 HTTPS，当前模板的 EC2 源站仍开放公网 HTTP，不代表端到端 HTTPS。创建基础设施不会自动发布应用镜像。
+
+- `production`：PR 合并到 `main` 后自动部署当前账户。
+- `production-alt`：仅手动部署。在 GitHub Actions → Deploy production → Run workflow，选择 `main`；手动运行固定指向备用环境，不会部署当前账户。
+- 手动入口需工作流先合并到默认分支后才出现。两种运行都验证提交来自已合并到 `main` 的 PR，并重新运行检查；其他分支不执行部署。
+- 两个 GitHub Environment 分别配置 Variables：`AWS_ACCOUNT_ID`、`AWS_ROLE_ARN`、`AWS_REGION`、`ECR_REPOSITORY`、`EC2_INSTANCE_ID`。不要在仓库级配置这些变量，避免跨环境继承；备用环境未配置完整时会在取得 AWS 凭证前失败。
+- 备用账户必须独立准备 GitHub OIDC 部署角色（信任本仓库的 `production-alt` 环境，以实际 OIDC subject 格式为准）、ARM EC2、ECR、RDS、Secrets Manager 和 SSM 部署器。沿用 `/usr/local/bin/deploy-miniflow` 接口。当前流程只发布应用，不创建这些资源。
+- 两套 Terraform state、数据库、密码和域名独立；不要复用当前账户的 state 或复制运行数据。部署并发锁按环境隔离，两边的成功、失败与回滚互不联动。
+- 备用环境限制为 `main` 分支，账户校验禁止它使用当前生产账户 `831823988119`。不配置长期 AWS 密钥、不开放 SSH。
+
 推送 `dev` 与合并 PR 是两个独立动作。只有用户在 GitHub 上确认合并 `dev → main` PR，才视为生产发布批准。
 
 1. `dev` push 和 `dev → main` PR 运行 CI，不接触 AWS。
