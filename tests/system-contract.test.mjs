@@ -27,13 +27,34 @@ test("keeps CI on dev and production deployment behind a merged main PR",async()
   assert.match(ci,/pull_request:\n\s+branches: \[main\]/);
   assert.match(ci,/push:\n\s+branches: \[dev\]/);
   assert.match(deploy,/push:\n\s+branches: \[main\]/);
-  assert.doesNotMatch(deploy,/workflow_dispatch/);
+  assert.match(deploy,/  workflow_dispatch:/);
+  assert.match(deploy,/if: github.ref == 'refs\/heads\/main'/);
+  assert.match(deploy,/environment: \$\{\{ github.event_name == 'workflow_dispatch' && 'production-alt' \|\| 'production' \}\}/);
+  assert.match(deploy,/group: deploy-\$\{\{ github.event_name == 'workflow_dispatch' && 'production-alt' \|\| 'production' \}\}/);
+  assert.match(deploy,/allowed-account-ids: \$\{\{ env.AWS_ACCOUNT_ID \}\}/);
+  assert.match(deploy,/production-alt must use a different AWS account/);
+  assert.match(deploy,/AWS_REGION: \$\{\{ vars.AWS_REGION \}\}/);
+  assert.match(deploy,/ECR_REPOSITORY: \$\{\{ vars.ECR_REPOSITORY \}\}/);
   assert.match(deploy,/commits\/\$\{GITHUB_SHA\}\/pulls/);
   assert.match(deploy,/select\(\.base\.ref == "main" and \.merged_at != null\)/);
   assert.match(deploy,/id-token: write/);
   assert.match(deploy,/configure-aws-credentials/);
   assert.match(deploy,/aws ssm send-command/);
   assert.doesNotMatch(`${ci}\n${deploy}`,/AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY/);
+});
+
+test("isolates alternate infrastructure state and guards the AWS account",async()=>{
+  const [alt,provider,ignore]=await Promise.all([read("terraform-alt/main.tf"),read("terraform/versions.tf"),read(".gitignore")]);
+  assert.match(alt,/source\s*= "\.\.\/terraform"/);
+  assert.match(alt,/expected_account_id\s*= "391016433211"/);
+  assert.match(alt,/github_environment\s*= "production-alt"/);
+  assert.match(alt,/database_deletion_protection\s*= true/);
+  assert.match(alt,/database_backup_retention_days\s*= 1/);
+  assert.match(await read("terraform/variables.tf"),/variable "database_backup_retention_days" \{[\s\S]*?default\s*= 7/);
+  assert.match(await read("terraform/main.tf"),/backup_retention_period\s*= var.database_backup_retention_days/);
+  assert.match(provider,/allowed_account_ids\s*= var.expected_account_id == null \? null : \[var.expected_account_id\]/);
+  assert.match(ignore,/terraform-alt\/\*\.tfstate/);
+  assert.match(ignore,/terraform-alt\/tfplan\*/);
 });
 
 test("passes an empty document parameter map to EventBridge and serializes credential refresh",async()=>{

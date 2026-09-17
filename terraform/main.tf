@@ -20,7 +20,7 @@ locals {
 
   tags = {
     Project     = var.project_name
-    Environment = "production"
+    Environment = var.github_environment
     ManagedBy   = "Terraform"
     Repository  = var.github_repository
   }
@@ -197,7 +197,7 @@ resource "aws_db_instance" "postgres" {
   publicly_accessible    = false
   multi_az               = false
 
-  backup_retention_period         = 7
+  backup_retention_period         = var.database_backup_retention_days
   auto_minor_version_upgrade      = true
   copy_tags_to_snapshot           = true
   deletion_protection             = var.database_deletion_protection
