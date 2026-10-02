@@ -1,4 +1,5 @@
 "use client";
+import { t, useLanguage } from "@/app/ui-language";
 
 import { useRef, useState } from "react";
 
@@ -7,12 +8,13 @@ type Outcome="completed"|"partial"|"returned";
 const labels={pick:"取备货",move:"迁移备货",store:"存备货"};
 
 export default function MobileWarehouseTasks({tasks,historyLoaded,historyError,api,refresh,openMenu}:{tasks:TaskRow[];historyLoaded:boolean;historyError:string;api:(url:string,options?:RequestInit)=>Promise<unknown>;refresh:()=>Promise<void>;openMenu:()=>void}){
+  useLanguage();
   const [tab,setTab]=useState<"pending"|"processed">("pending");
   const [opened,setOpened]=useState<string|null>(null);
   const [outcome,setOutcome]=useState<Outcome|null>(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
-  const [message,setMessage]=useState("");
+  const [message,setMessage]=useState<{sku:string|null;type:TaskRow["type"];outcome:string}|null>(null);
   const lock=useRef(false),scroll=useRef(0);
   const entries=new Map<string,TaskRow[]>();
   for(const row of tasks){
@@ -34,31 +36,31 @@ export default function MobileWarehouseTasks({tasks,historyLoaded,historyError,a
     lock.current=true;setBusy(true);setError("");
     try{
       await api(`/api/v1/tasks/${encodeURIComponent(task.id)}/complete`,{method:"POST",body:JSON.stringify({outcome,...(task.type==="pick"?{palletId:task.palletId}:{})})});
-      setMessage(`${task.sku??labels[task.type]} · ${options.find(option=>option.key===outcome)?.label}已提交`);
+      setMessage({sku:task.sku,type:task.type,outcome:options.find(option=>option.key===outcome)!.label});
       await refresh();
       back();
     }catch(e){setError(e instanceof Error?e.message:"提交失败，请重试")}
     finally{lock.current=false;setBusy(false)}
   };
   return <div className="mobile-warehouse-tasks">
-    <div className="mwt-heading">{opened?<button disabled={busy} onClick={back}>‹ 返回列表</button>:<h1>备货待办</h1>}<button aria-label="打开页面菜单" disabled={busy} onClick={openMenu}>☰ 菜单</button></div>
-    {message&&!opened&&<p className="mwt-success" role="status">{message}</p>}
-    {error&&<p className="mwt-error" role="alert">{error}</p>}
-    {historyError&&<p className="mwt-error" role="alert">{historyError} <button onClick={()=>void refresh()}>重试</button></p>}
-    {!opened?<><div className="mwt-tabs" role="tablist" aria-label="备货任务状态"><button id="mwt-pending-tab" role="tab" aria-selected={tab==="pending"} aria-controls="mwt-task-panel" onClick={()=>{setTab("pending");setMessage("");setError("")}}>待处理 <span>{pendingEntries.length}</span></button><button id="mwt-processed-tab" role="tab" aria-selected={tab==="processed"} aria-controls="mwt-task-panel" onClick={()=>{setTab("processed");setMessage("");setError("")}}>已处理 {historyLoaded&&<span>{processedEntries.length}</span>}</button></div>
-      <div id="mwt-task-panel" role="tabpanel" aria-labelledby={tab==="pending"?"mwt-pending-tab":"mwt-processed-tab"} aria-busy={tab==="processed"&&!historyLoaded&&!historyError}><div className="mwt-list">{visibleEntries.map(([key,items])=><button className="mwt-card" key={key} onClick={()=>{scroll.current=window.scrollY;setOpened(key);setOutcome(null);setError("");setMessage("");window.scrollTo(0,0)}}>
-        <span className="mwt-card-meta"><span>{labels[items[0].type]}</span>{items[0].priority==="urgent"&&<b>紧急</b>}</span>
-        {isProcessed(items[0])&&<span className="mwt-result">{resultLabel(items[0])}</span>}
-        <TaskInfo row={items[0]}/>{items.length>1&&<span>另有 {items.length-1} 条明细 · 整单处理</span>}
+    <div className="mwt-heading">{opened?<button disabled={busy} onClick={back} data-ui-size="">{t("‹ 返回列表")}</button>:<h1 data-ui-size="">{t("备货待办")}</h1>}<button aria-label={t("打开页面菜单")} disabled={busy} onClick={openMenu} data-ui-size="">{t("☰ 菜单")}</button></div>
+    {message&&!opened&&<p className="mwt-success" role="status">{t("{0} · {1}已提交",{0:message.sku??t(labels[message.type]),1:t(message.outcome)})}</p>}
+    {error&&<p className="mwt-error" role="alert">{t(error)}</p>}
+    {historyError&&<p className="mwt-error" role="alert">{t(historyError)} <button onClick={()=>void refresh()} data-ui-size="">{t("重试")}</button></p>}
+    {!opened?<><div className="mwt-tabs" role="tablist" aria-label={t("备货任务状态")}><button id="mwt-pending-tab" role="tab" aria-selected={tab==="pending"} aria-controls="mwt-task-panel" onClick={()=>{setTab("pending");setMessage(null);setError("")}} data-ui-size="">{t("待处理")} <span>{pendingEntries.length}</span></button><button id="mwt-processed-tab" role="tab" aria-selected={tab==="processed"} aria-controls="mwt-task-panel" onClick={()=>{setTab("processed");setMessage(null);setError("")}} data-ui-size="">{t("已处理")} {historyLoaded&&<span>{processedEntries.length}</span>}</button></div>
+      <div id="mwt-task-panel" role="tabpanel" aria-labelledby={tab==="pending"?"mwt-pending-tab":"mwt-processed-tab"} aria-busy={tab==="processed"&&!historyLoaded&&!historyError}><div className="mwt-list">{visibleEntries.map(([key,items])=><button className="mwt-card" key={key} onClick={()=>{scroll.current=window.scrollY;setOpened(key);setOutcome(null);setError("");setMessage(null);window.scrollTo(0,0)}} data-ui-size="">
+        <span className="mwt-card-meta"><span>{t(labels[items[0].type])}</span>{items[0].priority==="urgent"&&<b>{t("紧急")}</b>}</span>
+        {isProcessed(items[0])&&<span className="mwt-result">{t(resultLabel(items[0]))}</span>}
+        <TaskInfo row={items[0]}/>{items.length>1&&<span>{t("另有")} {items.length-1} {t("条明细 · 整单处理")}</span>}
         {items[0].itemNote&&<span className="mwt-note">{items[0].itemNote}</span>}
-      </button>)}</div>{!visibleEntries.length&&(tab==="pending"||historyLoaded)&&<p className="mwt-empty">{tab==="pending"?"当前没有待处理任务":"暂无已处理任务"}</p>}</div>
-    </>:!task?<div className="mwt-empty">该待办已被处理或已不再可用。<button onClick={back}>返回列表</button></div>:<>
-      <p className="mwt-kind">{labels[task.type]}{processed?` · ${resultLabel(task)}`:rows.length>1?" · 以下明细将整单提交":""}</p>
+      </button>)}</div>{!visibleEntries.length&&(tab==="pending"||historyLoaded)&&<p className="mwt-empty">{tab==="pending"?t("当前没有待处理任务"):t("暂无已处理任务")}</p>}</div>
+    </>:!task?<div className="mwt-empty">{t("该待办已被处理或已不再可用。")}<button onClick={back} data-ui-size="">{t("返回列表")}</button></div>:<>
+      <p className="mwt-kind">{t(labels[task.type])}{processed?` · ${t(resultLabel(task))}`:rows.length>1?t(" · 以下明细将整单提交"):""}</p>
       {rows.map((row,index)=><section className="mwt-detail" key={row.palletId??index}><TaskInfo row={row}/>
-        {(row.itemNote||row.note)&&<p className="mwt-note">备注：{row.itemNote||row.note}</p>}
+        {(row.itemNote||row.note)&&<p className="mwt-note">{t("备注：")}{row.itemNote||row.note}</p>}
       </section>)}
-      <div className="mwt-options" role="group" aria-label={processed?"处理结果":"选择处理结果"}>{options.map(option=><button key={option.key} disabled={busy||processed} aria-pressed={selectedOutcome===option.key} className={`mwt-${option.key}${selectedOutcome===option.key?" selected":""}`} onClick={()=>setOutcome(option.key)}><span className="mwt-selection-mark" aria-hidden="true"/>{option.label}</button>)}</div>
-      <div className="mwt-confirm"><button disabled={processed||!outcome||busy} onClick={()=>void submit()}>{processed?resultLabel(task):busy?"正在提交…":outcome?`确认 · ${options.find(option=>option.key===outcome)?.label}`:"请先选择处理结果"}</button></div>
+      <div className="mwt-options" role="group" aria-label={processed?t("处理结果"):t("选择处理结果")}>{options.map(option=><button key={option.key} disabled={busy||processed} aria-pressed={selectedOutcome===option.key} className={`mwt-${option.key}${selectedOutcome===option.key?" selected":""}`} onClick={()=>setOutcome(option.key)} data-ui-size=""><span className="mwt-selection-mark" aria-hidden="true"/>{t(option.label)}</button>)}</div>
+      <div className="mwt-confirm"><button disabled={processed||!outcome||busy} onClick={()=>void submit()} data-ui-size="">{processed?t(resultLabel(task)):busy?t("正在提交…"):outcome?t("确认 · {0}", {0: t(options.find(option=>option.key===outcome)?.label??"")}):t("请先选择处理结果")}</button></div>
     </>}
   </div>;
 }
@@ -74,9 +76,10 @@ function resultLabel(row:TaskRow){
 }
 
 function TaskInfo({row}:{row:TaskRow}){
+  useLanguage();
   return <span className="mwt-info">
-    <span className="mwt-info-row"><span className="mwt-info-label">SKU</span><b>{row.sku??"未标注 SKU"}</b></span>
-    <span className="mwt-info-row"><span className="mwt-info-label">{row.type==="store"?"起始库位":"备货库位"}</span><b>{row.fromLocation??"收货暂存区"}</b></span>
-    <span className="mwt-info-row"><span className="mwt-info-label">{row.type==="pick"?"拣货库位":row.type==="move"?"目标备货库位":"备货库位"}</span><b>{row.toLocation??"待分配"}</b></span>
+    <span className="mwt-info-row"><span className="mwt-info-label">SKU</span><b>{row.sku??t("未标注 SKU")}</b></span>
+    <span className="mwt-info-row"><span className="mwt-info-label">{row.type==="store"?t("起始库位"):t("备货库位")}</span><b>{row.fromLocation??t("收货暂存区")}</b></span>
+    <span className="mwt-info-row"><span className="mwt-info-label">{row.type==="pick"?t("拣货库位"):row.type==="move"?t("目标备货库位"):t("备货库位")}</span><b>{row.toLocation??t("待分配")}</b></span>
   </span>;
 }

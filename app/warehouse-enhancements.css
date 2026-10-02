@@ -2851,7 +2851,65 @@
 }
 
 /* Narrow-screen warehouse mode */
+.reserve-mobile-search { display: none; }
+
 @media (max-width: 760px) {
+  /* Let the search bar stick to the viewport instead of the clipped panel. */
+  .reserve-table.inventory-panel { overflow: visible; }
+
+  .reserve-mobile-search {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 12px;
+    border-radius: 9px 9px 0 0;
+    border-bottom: 1px solid #dfe6ef;
+    background: #fff;
+    box-shadow: 0 3px 8px #203b5c0a;
+  }
+
+  .reserve-mobile-search-field {
+    display: flex;
+    align-items: center;
+    min-height: 48px;
+    border: 1px solid #b9c9df;
+    border-radius: 8px;
+    background: #f7faff;
+  }
+
+  .reserve-mobile-search-field:focus-within {
+    border-color: #3568d4;
+    box-shadow: 0 0 0 2px #3568d41a;
+  }
+
+  .reserve-mobile-search-field > span { padding-left: 12px; color: #516782; font-size: 24px; }
+  .reserve-mobile-search-field input {
+    width: 100%;
+    min-width: 0;
+    height: 48px;
+    border: 0;
+    outline: none;
+    padding: 0 10px;
+    background: transparent;
+    color: #172b47;
+    font-size: 18px;
+  }
+
+  .reserve-mobile-search-field button {
+    flex: 0 0 48px;
+    height: 48px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #405570;
+    font-size: 26px;
+  }
+
+  .reserve-mobile-search-field button:disabled { visibility: hidden; }
+  .reserve-mobile-search-field button:focus-visible { outline: 2px solid #3568d4; outline-offset: -4px; }
+
   .sidebar-head {
     display: none;
   }

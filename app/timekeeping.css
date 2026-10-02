@@ -24,9 +24,10 @@
 
 .time-page-placeholder { min-height: 680px; }
 
-.workspace-title { flex: 0 0 auto; }
+.workspace > header { height: auto; min-height: 84px; padding-block: 14px; flex-wrap: wrap; gap: 12px 24px; }
+.workspace-title { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .workspace-title h1 { margin: 0; }
-.workspace-title-tools { display: flex; min-width: 0; flex: 1; align-items: center; justify-content: flex-end; margin-left: 28px; }
+.workspace-title-tools { display: flex; min-width: 0; flex: 1 1 420px; max-width: 100%; align-items: center; justify-content: flex-end; }
 .time-scan-titlebar { display: grid; width: min(100%,720px); grid-template-columns: minmax(360px,1fr) auto; align-items: center; gap: 14px; margin-inline: auto; }
 .time-scan-title-input { display: block; min-width: 0; overflow: hidden; border: 2px solid #8ba9e6; border-radius: 9px; background: #fff; }
 .time-scan-title-input:focus-within { border-color: #3568d4; box-shadow: 0 0 0 3px #3568d414; }
@@ -168,7 +169,7 @@ button:disabled { cursor: default; opacity: .48; }
 .time-scan-wave-table th:nth-child(3) { width: 170px; }
 .time-scan-wave-table th:nth-child(4) { width: 78px; }
 .time-scan-wave-table th:nth-child(5),.time-scan-wave-table th:nth-child(6),.time-scan-wave-table th:nth-child(7) { width: 50px; }
-.time-scan-wave-table th:nth-child(8) { width: 100px; }
+.time-scan-wave-table th:nth-child(8) { width: 112px; }
 .time-scan-wave-table th:nth-child(9) { width: 108px; }
 .time-scan-wave-table tbody tr:hover { background: #e8f0ff; }
 .time-scan-wave-table tbody tr.current { background: linear-gradient(110deg,#e5eeff 0%,#fff 35%,#cfe0ff 50%,#fff 65%,#e5eeff 100%); background-size: 260% 100%; box-shadow: inset 4px 0 #3568d4,inset -4px 0 #3568d4,0 0 15px #3568d43d; animation: time-current-task-flow 1.55s linear infinite; }
@@ -212,7 +213,8 @@ button:disabled { cursor: default; opacity: .48; }
 .time-truncate { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .workspace[data-page="现场看板"] > header h1 { font-size: 23px; }
 .time-dashboard-title-actions { display: flex; max-width: 100%; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; margin-inline: auto; color: #4f6077; font-size: 13px; font-weight: 800; }
-.time-dashboard-date-range { display: flex; align-items: center; gap: 6px; }
+.time-dashboard-date-range { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; max-width: 100%; }
+.time-dashboard-title-actions > button { flex: 0 0 auto; }
 .time-dashboard-date { display: flex; align-items: center; gap: 5px; }
 .time-dashboard-date input { width: 132px; height: 38px; border: 1px solid #d8e0eb; border-radius: 7px; background: #fff; color: #26364f; padding: 0 8px; font-size: 13px; font-weight: 700; }
 .time-dashboard-date-range > i { color: #75849a; font-size: 12px; font-style: normal; font-weight: 750; }
@@ -265,6 +267,10 @@ button:disabled { cursor: default; opacity: .48; }
 .time-dashboard-wave-table .time-wave-duration-col { width: 62px; }
 .time-dashboard-wave-table .time-wave-rate-col { width: 68px; }
 .time-dashboard-wave-table .time-wave-action-col { width: 123px; }
+/* Translated labels need intrinsic column widths, not the compact Chinese column budget. */
+html:not([lang="zh-CN"]) .time-dashboard-wave-table { table-layout: auto; }
+html:not([lang="zh-CN"]) .time-dashboard-wave-table th,
+html:not([lang="zh-CN"]) .time-dashboard-wave-table td { padding-inline: 6px; }
 .time-dashboard-wave-table code { background: transparent; color: #1e293b; padding: 0; font-size: 14px; font-weight: 850; letter-spacing: -.06em; }
 .time-dashboard-stat-group { margin-top: 14px; }
 .time-dashboard-stat-group > h3 { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; color: #405169; font-size: 13px; font-weight: 850; letter-spacing: .6px; }
@@ -297,7 +303,8 @@ button:disabled { cursor: default; opacity: .48; }
 .time-daily-people-popover small { font-weight: 650; }
 .time-stat-empty { margin: 0; padding: 18px 9px; color: #5f6f84; font-size: 12px; font-weight: 650; text-align: center; }
 .time-dashboard-wave-title { align-items: flex-end; flex-wrap: wrap; }
-.time-dashboard-wave-actions { display: flex; max-width: 100%; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
+.time-dashboard-wave-title { flex-wrap: wrap; }
+.time-dashboard-wave-actions { display: flex; min-width: 0; max-width: 100%; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
 .time-dashboard-page .time-card-title { min-height: 62px; padding: 12px 16px; }
 .time-dashboard-page .time-card-title h3 { color: #1f2e45; font-size: 19px; font-weight: 850; }
 .time-dashboard-page .time-card-title p { color: #596a80; font-size: 14px; font-weight: 650; }

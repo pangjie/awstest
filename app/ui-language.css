@@ -1,0 +1,8 @@
+/* A separate fixed control never joins a toolbar's flex/grid sizing. */
+.ui-language-button { position: fixed; z-index: 1100; right: max(8px,env(safe-area-inset-right)); bottom: max(8px,env(safe-area-inset-bottom)); width: 62px; height: 44px; padding: 0; border: 1px solid #7892b4; border-radius: 8px; background: #fff; color: #193f70; box-shadow: 0 2px 8px #172b4326; font: 700 14px/1 Arial,sans-serif; }
+.ui-language-button:hover { background: #eaf2ff; }
+.ui-language-button:focus-visible { outline: 3px solid #3568d4; outline-offset: 2px; }
+body:has(nextjs-portal) .ui-language-button { right: 72px; }
+html:not([lang="zh-CN"]) .workspace-title h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button[data-ui-size],th[data-ui-size] { white-space: nowrap; }
+@media print { .ui-language-button { display: none; } }

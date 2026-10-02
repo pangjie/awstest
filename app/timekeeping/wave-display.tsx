@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { t, useLanguage } from "@/app/ui-language";
 import { normalizeWorkType, WAVE_TYPE_DEFINITIONS } from "@/lib/timekeeping/waves";
 
 const CHANNEL_COLORS:Record<string,CSSProperties>={
@@ -25,12 +26,15 @@ export function waveTypeInfo(value:string){
 }
 
 export function WaveChannelTag({value}:{value:string}){
+  useLanguage();
   const label=channelLabel(value);
   const style=CHANNEL_COLORS[label.toLowerCase().replace(/\s+/g,"")];
-  return <span className={`time-channel-label${style?"":" unknown"}`} style={style}>{label}</span>;
+  return <span className={`time-channel-label${style?"":" unknown"}`} style={style}>{["普通","其他"].includes(label)?t(label):label}</span>;
 }
 
 export function WaveTypeTag({value}:{value:string}){
+  const {language}=useLanguage();
   const type=waveTypeInfo(value);
-  return <span className={`time-wave-type ${type.key}`} title={type.label}><span>{type.short}</span></span>;
+  const short=language==="zh"?type.short:({hot:"H",single:"S",multiple:"M",mixed:"X"} as Record<string,string>)[type.key]??type.short;
+  return <span className={`time-wave-type ${type.key}`} title={t(type.label)} aria-label={t(type.label)}><span>{short}</span></span>;
 }

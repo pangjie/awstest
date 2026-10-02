@@ -1,0 +1,97 @@
+.employee-status-board { min-height: 100dvh; padding: 18px 24px; background: radial-gradient(circle at 1px 1px,#74889b16 1px,transparent 0) 0 0 / 8px 8px,#e9eef2; color: #172b43; }
+.employee-status-header { display: flex; align-items: center; gap: 24px; min-height: 68px; margin-bottom: 14px; }
+.employee-status-header h1 { margin: 0; font-size: 28px; white-space: nowrap; }
+.employee-status-counts { display: flex; gap: 18px; white-space: nowrap; }
+.employee-status-counts b { margin-left: 5px; font-size: 26px; font-variant-numeric: tabular-nums; }
+.employee-status-clock { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+.employee-status-clock b { font-size: 19px; }
+.employee-status-clock small { display: block; margin-top: 4px; font-size: 12px; color: #41536c; }
+.employee-status-clock .employee-status-warning { color: #a02c22; }
+.employee-status-fullscreen { padding: 10px 14px; border: 1px solid #9eb1c9; border-radius: 8px; background: white; color: #193f70; white-space: nowrap; }
+:fullscreen .employee-status-fullscreen { display: none; }
+.employee-status-grid { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); grid-auto-rows: max(148px,calc((100dvh - 118px - 48px) / 5)); gap: 12px; }
+.employee-card-slot { position: relative; min-width: 0; min-height: 0; perspective: 1100px; }
+.employee-card-slot > .employee-status-card { height: 100%; }
+.employee-card-slot:has(.employee-card-flip) { animation: employee-card-layer .75s step-end,employee-card-lift .75s ease-in-out; }
+.employee-card-flip { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; animation: employee-card-turn .75s cubic-bezier(.35,0,.65,1) both; }
+.employee-card-flip > .employee-status-card { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.employee-card-flip .flip-back { transform: rotateY(180deg); }
+@keyframes employee-card-layer { 0% { z-index: 5; } 100% { z-index: auto; } }
+@keyframes employee-card-lift {
+  0%,100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-12px) scale(1.015); }
+}
+/* Keep rotation continuous through 90deg; lift has its own easing. */
+@keyframes employee-card-turn {
+  0% { transform: rotateY(0deg); }
+  100% { transform: rotateY(180deg); }
+}
+.employee-status-card { --card-padding-x: 14px; position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 10px var(--card-padding-x); border: 2px solid; border-radius: 12px; background-image: linear-gradient(122deg,#ffffff85,transparent 31%,#ffffff38 32%,transparent 34%,transparent 72%,#173c4917),linear-gradient(180deg,#ffffff12,transparent 65%,#15382c10); box-shadow: inset 0 2px 0 #ffffffdc,inset 1px 0 0 #ffffff80,inset 0 -3px 0 #14352c18,0 2px 0 var(--employee-edge),0 4px 3px #20304426,0 8px 12px #20304424; }
+.employee-status-card::before { content: ""; position: absolute; inset: 4px; border: 1px solid #ffffff80; border-bottom-color: #163d351c; border-radius: 8px; box-shadow: inset 0 1px 1px #ffffff65; pointer-events: none; }
+.employee-status-change { z-index: 3; position: absolute; inset: -2px; border: 3px solid #fff1c2; border-radius: inherit; pointer-events: none; animation: employee-status-highlight 2s ease-out both; }
+.employee-status-change::before { content: ""; position: absolute; inset: 0; border-radius: 8px; background: linear-gradient(115deg,transparent 38%,#fff8df18 44%,#ffffff9c 49%,#fff0bd59 52%,transparent 59%); background-size: 250% 100%; background-repeat: no-repeat; animation: employee-status-sheen 2s ease-in-out both; }
+@keyframes employee-status-highlight {
+  0% { opacity: 0; box-shadow: 0 0 0 #ffe7a3; }
+  10%,55% { opacity: 1; box-shadow: 0 0 5px 1px #ffe7a3b3,inset 0 0 4px #ffffff80; }
+  75% { opacity: .85; box-shadow: 0 0 3px #ffe7a380; }
+  100% { opacity: 0; box-shadow: none; }
+}
+@keyframes employee-status-sheen {
+  0%,10% { background-position: 140% 0; opacity: 0; }
+  18% { opacity: .9; }
+  60% { background-position: -40% 0; opacity: .9; }
+  70%,100% { background-position: -40% 0; opacity: 0; }
+}
+@media(prefers-reduced-motion: reduce) {
+  .employee-status-change::before { display: none; }
+  .employee-card-slot:has(.employee-card-flip) { animation: none; }
+  .employee-card-flip { animation: none; }
+  .employee-card-flip .flip-old { display: none; }
+  .employee-card-flip .flip-back { transform: none; animation: employee-card-reduced-highlight 1.5s ease-out; }
+}
+@keyframes employee-card-reduced-highlight { 0%,60% { outline: 3px solid #e6bd64; outline-offset: 1px; } 100% { outline: 3px solid transparent; outline-offset: 1px; } }
+.employee-card-top { position: relative; flex: 0 0 40px; }
+.employee-card-brand { display: inline-flex; align-items: center; gap: 5px; padding-top: 6px; font-size: 12px; font-weight: 750; letter-spacing: 2px; opacity: .65; }
+.employee-card-brand svg { width: 20px; height: 20px; }
+/* Cover both the card padding and its 2px border, including at narrow widths. */
+.employee-status-label { z-index: 2; position: absolute; right: calc(-1 * (var(--card-padding-x) + 2px)); top: -4px; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 130px; height: 44px; padding-left: 10px; background: linear-gradient(180deg,#ffffff20,transparent 45%,#00000016),var(--employee-ribbon); color: #fff; clip-path: polygon(0 0,100% 0,100% 100%,0 100%,10px 50%); box-shadow: inset 0 1px 0 #ffffff75,inset 0 -3px 0 #00000028; text-shadow: 0 1px 1px #00000035; }
+.employee-status-label b { font-size: 19px; line-height: 1.15; letter-spacing: 2px; }
+.employee-status-label small { font-size: 12px; line-height: 1.4; font-weight: 600; }
+.employee-status-card h2 { display: flex; align-items: center; justify-content: center; flex: 1; min-height: 0; margin: 2px 0 6px; font-size: clamp(36px,2.5vw,48px); font-weight: 800; line-height: 1.1; text-align: center; overflow-wrap: anywhere; text-shadow: 0 1px 0 #ffffffa6; }
+.employee-status-card h2.long-name { font-size: clamp(24px,1.65vw,32px); }
+.employee-card-task { position: relative; display: flex; align-items: center; flex: 0 0 44px; gap: 10px; min-width: 0; padding: 5px 9px; border: 1px solid #ffffffc7; border-top-color: #173b3340; border-radius: 6px; background: linear-gradient(180deg,#ffffff65,#ffffffa6); box-shadow: inset 0 2px 3px #233b491c,0 1px 0 #ffffffc0; }
+.employee-card-task-icon { display: grid; place-items: center; flex: 0 0 30px; height: 30px; border: 1px solid currentColor; border-radius: 6px; background: #ffffff6b; }
+.employee-card-task-icon svg { width: 23px; height: 23px; }
+.employee-card-task p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 0; font-size: 18px; font-weight: 750; line-height: 1.15; overflow-wrap: anywhere; }
+.task-warehouse .employee-card-task-icon { background-image: linear-gradient(#52726012 1px,transparent 1px),linear-gradient(90deg,#52726012 1px,transparent 1px); background-size: 6px 6px; }
+.task-wave { border-left: 4px solid currentColor; border-radius: 3px 6px 6px 3px; }
+.task-wave p { font-variant-numeric: tabular-nums; letter-spacing: .3px; }
+.task-scan .employee-card-task-icon { border-style: dashed; border-radius: 3px; }
+.task-issue { border: 1px dashed currentColor; }
+.task-issue .employee-card-task-icon { border-radius: 50%; }
+.task-clean .employee-card-task-icon { border-radius: 10px 3px 10px 3px; }
+.task-idle { background: #ffffff40; border-color: #ffffff70; }
+.task-idle .employee-card-task-icon { border-color: transparent; }
+.employee-card-pause { margin-left: auto; font-size: 20px; font-weight: 800; }
+.employee-status-card.state-picking,
+.employee-status-card.state-warehouse { background-color: #bfe8ce; color: #124d2d; border-color: #70af8a; --employee-ribbon: #20643c; --employee-edge: #6b9d7d; }
+.employee-status-card.state-ready { background-color: #c5e0fc; color: #123f79; border-color: #78a7db; --employee-ribbon: #225e9c; --employee-edge: #7091b9; }
+.employee-status-card.state-off { background-color: #d5dce5; color: #34445a; border-color: #a0aebe; --employee-ribbon: #536378; --employee-edge: #8997a8; }
+.employee-status-card.state-not_started { background-color: #f8f9fb; color: #4b596d; border-color: #c6cfda; --employee-ribbon: #657286; --employee-edge: #aeb8c5; }
+.employee-status-denied { padding: 40px; }
+@media(max-width:1400px) {
+  .employee-status-header { gap: 14px; flex-wrap: wrap; }
+  .employee-status-counts { gap: 12px; }
+  .employee-status-card { --card-padding-x: 10px; }
+  .employee-status-label { width: 120px; }
+  .employee-card-brand { font-size: 0; }
+}
+@media(max-width:1000px) {
+  .employee-status-grid { grid-template-columns: repeat(3,minmax(0,1fr)); grid-auto-rows: minmax(190px,auto); }
+  .employee-status-clock { margin-left: 0; text-align: left; }
+}
+@media(max-width:540px) {
+  .employee-status-board { padding: 12px; }
+  .employee-status-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .employee-status-counts { flex-wrap: wrap; }
+}

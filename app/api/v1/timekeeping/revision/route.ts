@@ -5,7 +5,9 @@ import { getTimeRevision } from "../../../../../lib/timekeeping/data";
 export const dynamic="force-dynamic";
 
 export async function GET(request:NextRequest){
-  const access=await authorizePageAccess("time-scan","time-dashboard","time-records","time-employees");
+  const access=request.nextUrl.searchParams.get("scope")==="employee-status"
+    ?await authorizePageAccess("time-status")
+    :await authorizePageAccess("time-scan","time-dashboard","time-records","time-employees","time-status");
   if(!access.authorized)return NextResponse.json({ok:false,error:access.message},{status:access.status});
   const revision=await getTimeRevision();
   const etag=`"${revision}"`;

@@ -19,6 +19,7 @@ export const PAGE_DEFINITIONS = [
   {key:"mobile-tasks",label:"备货待办",icon:"☑",section:"main"},
   ...WAREHOUSE_DATA_TABS,
   ...TIMEKEEPING_PAGES,
+  {key:"time-status",label:"员工状态",icon:"▦",section:"timekeeping"},
 ] as const;
 
 export type PageKey=(typeof PAGE_DEFINITIONS)[number]["key"];

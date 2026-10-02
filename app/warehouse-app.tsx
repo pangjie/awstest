@@ -1,4 +1,5 @@
 "use client";
+import { t, useLanguage } from "@/app/ui-language";
 
 import { ChangeEvent, FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fetchWithTimeout } from "@/lib/client-fetch";
@@ -164,20 +165,21 @@ function authorizedWarehouseDataTab(user:SessionUser,current:WarehouseDataTabKey
 }
 
 function SidebarDateTime() {
+  useLanguage();
   const [now,setNow]=useState(()=>new Date());
   useEffect(()=>{
     const interval=window.setInterval(()=>setNow(new Date()),1000);
     return ()=>window.clearInterval(interval);
   },[]);
   const fullDate=formatWarehouseTime(now,{year:"numeric",month:"long",day:"numeric",weekday:"long"});
-  return <div className="sidebar-date" aria-label={`${fullDate}，${formatWarehouseTime(now,{hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"})}，美东时间`}>
+  return <div className="sidebar-date" aria-label={t("{0}，{1}，美东时间", {0: fullDate, 1: formatWarehouseTime(now,{hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"})})}>
     <time className="sidebar-calendar" dateTime={dateKey(now.toISOString())}>
       <span suppressHydrationWarning>{formatWarehouseTime(now,{year:"numeric"})} · {formatWarehouseTime(now,{weekday:"long"})}</span>
       <strong suppressHydrationWarning>{formatWarehouseTime(now,{month:"long",day:"numeric"})}</strong>
     </time>
     <time className="sidebar-clock" dateTime={now.toISOString()}>
       <strong suppressHydrationWarning>{formatWarehouseTime(now,{hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"})}</strong>
-      <span>美东时间</span>
+      <span>{t("美东时间")}</span>
     </time>
   </div>;
 }
@@ -191,6 +193,7 @@ function getPortableDeviceSnapshot(){return navigator.maxTouchPoints>0||window.m
 function getServerPortableDeviceSnapshot(){return false}
 
 export default function WarehouseApp({user}:{user:SessionUser}) {
+  useLanguage();
   const [active,setActive]=useState<PageLabel>(()=>NAVIGATION_DEFINITIONS.find(page=>canAccessAnyPage(user,page.pagePermissions))?.label??"备货操作");
   const [warehouseDataTab,setWarehouseDataTab]=useState<WarehouseDataTabKey>(()=>authorizedWarehouseDataTab(user,"tasks"));
   const [warehouseDataVisited,setWarehouseDataVisited]=useState(()=>authorizedPageLabel(user,"备货操作")==="备货数据");
@@ -354,40 +357,40 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
   const invalidSkuCodes=useMemo(()=>new Set(data?.invalidSkuCodes??[]),[data]);
   const allLocations=useMemo(()=>[...(data?.locations??[]),...(pickLocations??[])],[data,pickLocations]);
 
-  if(loading&&!data) return <div className="app-loading" aria-label="正在读取仓库数据"><BrandMark className="brand-mark"/></div>;
-  if(error&&!data) return <div className="app-loading error-state"><b>数据加载失败</b><p>{error}</p><button onClick={()=>refresh()}>重新加载</button></div>;
+  if(loading&&!data) return <div className="app-loading" aria-label={t("正在读取仓库数据")}><BrandMark className="brand-mark"/></div>;
+  if(error&&!data) return <div className="app-loading error-state"><b>{t("数据加载失败")}</b><p>{t(error)}</p><button onClick={()=>refresh()} data-ui-size="">{t("重新加载")}</button></div>;
   const stats=data!.stats;
   const currentTaskRows=currentTask?(taskHistory??data!.tasks).filter(task=>task.id===currentTask.id):[];
   const latestCurrentTask=currentTaskRows[0]??currentTask;
   const mobileWarehousePage=active==="备货待办"||active==="备货操作"||active==="备库总表";
 
   return <main className={`app-shell${portableDevice?" portable-device":""}${active==="工卡扫描"?" mobile-card-mode":""}${mobileWarehousePage?` mobile-task-mode${mobileTaskMenu?" task-menu-open":""}`:""}`}>
-    {mobileWarehousePage&&mobileTaskMenu&&<button className="mwt-menu-backdrop" aria-label="关闭页面菜单" onClick={()=>setMobileTaskMenu(false)}/>}
+    {mobileWarehousePage&&mobileTaskMenu&&<button className="mwt-menu-backdrop" aria-label={t("关闭页面菜单")} onClick={()=>setMobileTaskMenu(false)}/>}
     <aside className="sidebar">
-      {mobileWarehousePage&&<button className="warehouse-mobile-menu-close" onClick={()=>setMobileTaskMenu(false)}>✕ 关闭菜单</button>}
+      {mobileWarehousePage&&<button className="warehouse-mobile-menu-close" onClick={()=>setMobileTaskMenu(false)} data-ui-size="">{t("✕ 关闭菜单")}</button>}
       <div className="sidebar-head">
-        <div className="brand"><BrandMark className="brand-mark"/><div><strong>内库</strong><span>WAREHOUSE</span></div></div>
+        <div className="brand"><BrandMark className="brand-mark"/><div><strong>{t("内库")}</strong><span>WAREHOUSE</span></div></div>
         <SidebarDateTime/>
       </div>
-      <nav>{visiblePages.map((page,index)=><Fragment key={page.key}>{(index===0||visiblePages[index-1].group!==page.group)&&<span className="nav-group-label">{page.group==="warehouse"?"备货体系":"工时体系"}</span>}<button data-nav={page.label} aria-label={page.label} title={page.label} className={active===page.label?"nav-item active":"nav-item"} onClick={()=>{setActive(page.label);setMobileTaskMenu(false);setTimeDashboardImportOpen(false);if(page.key==="time-scan")setTimeScanBadge("");if(page.label==="备货数据")setWarehouseDataVisited(true);setSelected([]);setEditingRow(null)}}>
-        <span className="nav-icon">{page.icon}</span>{page.label}{page.key==="warehouse-data"&&allowedPageKeys.has("tasks")&&stats.pendingTasks>0&&<b className="nav-badge">{stats.pendingTasks}</b>}
-      </button></Fragment>)}</nav>
+      <nav>{visiblePages.map((page,index)=><Fragment key={page.key}>{(index===0||visiblePages[index-1].group!==page.group)&&<span className="nav-group-label">{page.group==="warehouse"?t("备货体系"):t("工时体系")}</span>}<button data-nav={page.label} aria-label={t(page.label)} title={t(page.label)} className={active===page.label?"nav-item active":"nav-item"} onClick={()=>{setActive(page.label);setMobileTaskMenu(false);setTimeDashboardImportOpen(false);if(page.key==="time-scan")setTimeScanBadge("");if(page.label==="备货数据")setWarehouseDataVisited(true);setSelected([]);setEditingRow(null)}} data-ui-size="">
+        <span className="nav-icon">{page.icon}</span>{t(page.label)}{page.key==="warehouse-data"&&allowedPageKeys.has("tasks")&&stats.pendingTasks>0&&<b className="nav-badge">{stats.pendingTasks}</b>}
+      </button></Fragment>)}{allowedPageKeys.has("time-status")&&<a className="nav-item" href="/employee-status" style={{textDecoration:"none"}}><span className="nav-icon">▦</span>{t("员工状态")}</a>}</nav>
       <div className="sidebar-bottom">
-        {effectiveUser.role==="admin"&&<button className="nav-item" onClick={()=>{setMobileTaskMenu(false);setModal("accounts")}}><span className="nav-icon">⚙</span>账户管理<span className="admin-tag">ADMIN</span></button>}
-        <div className="user"><div className="avatar">{effectiveUser.name.slice(0,1)}</div><div><strong>{effectiveUser.name}</strong><span>{roleName(effectiveUser.role)}</span></div>
-          <button aria-label="退出登录" title="退出登录" onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});location.reload()}}>↪</button></div>
+        {effectiveUser.role==="admin"&&<button className="nav-item" onClick={()=>{setMobileTaskMenu(false);setModal("accounts")}} data-ui-size=""><span className="nav-icon">⚙</span>{t("账户管理")}<span className="admin-tag">ADMIN</span></button>}
+        <div className="user"><div className="avatar">{effectiveUser.name.slice(0,1)}</div><div><strong>{effectiveUser.name}</strong><span>{t(roleName(effectiveUser.role))}</span></div>
+          <button aria-label={t("退出登录")} title={t("退出登录")} onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});location.reload()}}>↪</button></div>
       </div>
     </aside>
     <section className="workspace" data-page={active}>
-      {active!=="备货操作"&&<header><div className="workspace-title"><h1>{active}</h1></div><div className="workspace-title-tools" ref={setTimekeepingTitleTarget}>{activeTimekeepingPage==="time-dashboard"&&<div className="time-dashboard-title-actions"><button className="primary" type="button" onClick={()=>setTimeDashboardImportOpen(true)}>导入波次</button><button className="time-dashboard-current" type="button" onClick={()=>setTimeDashboardDate(currentDate())}>当前波次</button><button className="time-dashboard-day" type="button" onClick={()=>setTimeDashboardDate(date=>addDays(date,-1))}>前一天</button><button className="time-dashboard-day" type="button" onClick={()=>setTimeDashboardDate(date=>addDays(date,1))}>后一天</button><div className="time-dashboard-date-range" role="group" aria-label="导出日期范围"><label className="time-dashboard-date"><span title="仅用于导出">起始日期</span><input aria-label="导出起始日期" title="仅用于导出" type="date" value={timeDashboardExportStartDate} max={timeDashboardExportEndDate} onChange={event=>{const value=event.target.value;if(!value)return;setTimeDashboardExportStartDate(value);if(value>timeDashboardExportEndDate)setTimeDashboardExportEndDate(value)}}/></label><label className="time-dashboard-date"><span title="仅用于导出">终止日期</span><input aria-label="导出终止日期" title="仅用于导出" type="date" value={timeDashboardExportEndDate} min={timeDashboardExportStartDate} onChange={event=>{const value=event.target.value;if(!value)return;setTimeDashboardExportEndDate(value);if(value<timeDashboardExportStartDate)setTimeDashboardExportStartDate(value)}}/></label></div><button className="time-dashboard-export" type="button" onClick={()=>setTimeDashboardExportKey(key=>key+1)}>导出</button></div>}</div></header>}
+      {active!=="备货操作"&&<header><div className="workspace-title"><h1 data-ui-size="">{t(active)}</h1></div><div className="workspace-title-tools" ref={setTimekeepingTitleTarget}>{activeTimekeepingPage==="time-dashboard"&&<div className="time-dashboard-title-actions"><button className="primary" type="button" onClick={()=>setTimeDashboardImportOpen(true)} data-ui-size="">{t("导入波次")}</button><button className="time-dashboard-current" type="button" onClick={()=>setTimeDashboardDate(currentDate())} data-ui-size="">{t("当前波次")}</button><button className="time-dashboard-day" type="button" onClick={()=>setTimeDashboardDate(date=>addDays(date,-1))} data-ui-size="">{t("前一天")}</button><button className="time-dashboard-day" type="button" onClick={()=>setTimeDashboardDate(date=>addDays(date,1))} data-ui-size="">{t("后一天")}</button><div className="time-dashboard-date-range" role="group" aria-label={t("导出日期范围")}><label className="time-dashboard-date"><span title={t("仅用于导出")}>{t("起始日期")}</span><input aria-label={t("导出起始日期")} title={t("仅用于导出")} type="date" value={timeDashboardExportStartDate} max={timeDashboardExportEndDate} onChange={event=>{const value=event.target.value;if(!value)return;setTimeDashboardExportStartDate(value);if(value>timeDashboardExportEndDate)setTimeDashboardExportEndDate(value)}}/></label><label className="time-dashboard-date"><span title={t("仅用于导出")}>{t("终止日期")}</span><input aria-label={t("导出终止日期")} title={t("仅用于导出")} type="date" value={timeDashboardExportEndDate} min={timeDashboardExportStartDate} onChange={event=>{const value=event.target.value;if(!value)return;setTimeDashboardExportEndDate(value);if(value<timeDashboardExportStartDate)setTimeDashboardExportStartDate(value)}}/></label></div><button className="time-dashboard-export" type="button" onClick={()=>setTimeDashboardExportKey(key=>key+1)} data-ui-size="">{t("导出")}</button></div>}</div></header>}
       <div className="content">
-        {(active==="备货操作"||active==="备库总表")&&<div className="warehouse-mobile-toolbar"><h1>{active}</h1><button type="button" aria-label="打开页面菜单" aria-expanded={mobileTaskMenu} onClick={()=>setMobileTaskMenu(current=>!current)}>☰ 菜单</button></div>}
+        {(active==="备货操作"||active==="备库总表")&&<div className="warehouse-mobile-toolbar"><h1 data-ui-size="">{t(active)}</h1><button type="button" aria-label={t("打开页面菜单")} aria-expanded={mobileTaskMenu} onClick={()=>setMobileTaskMenu(current=>!current)} data-ui-size="">{t("☰ 菜单")}</button></div>}
         {active==="备货待办"&&<MobileWarehouseTasks tasks={taskHistory??data!.tasks} historyLoaded={taskHistory!==null} historyError={taskHistoryError} api={requestApi} refresh={refresh} openMenu={()=>setMobileTaskMenu(current=>!current)}/>}
         {active==="备货操作"&&<Dashboard stats={stats} tasks={pendingTaskGroups} onFlow={setModal} onTask={openTask} openTasks={()=>{setWarehouseDataTab("tasks");setWarehouseDataVisited(true);setActive("备货数据")}} data={data!} invalidSkuCodes={invalidSkuCodes} canOpenTasks={allowedPageKeys.has("tasks")} canOpenLedger={allowedPageKeys.has("warehouse-ledger")} openHistory={()=>{setLedgerEntry({tab:"history",query:""});setWarehouseDataTab("warehouse-ledger");setWarehouseDataVisited(true);setActive("备货数据")}}/>}
         {active==="备库总表"&&<ReserveTable pallets={data!.pallets} locations={data!.locations} selected={selected} setSelected={setSelected} onFlow={openFlow} notify={notify} done={async message=>{notify(message);await refresh()}} onEdit={setEditingRow} onLocation={allowedPageKeys.has("warehouse-ledger")?code=>{setLedgerEntry({tab:"location",query:code});setWarehouseDataTab("warehouse-ledger");setWarehouseDataVisited(true);setActive("备货数据")}:undefined} invalidSkuCodes={invalidSkuCodes}/>}
         {warehouseDataMounted&&<div className="warehouse-data-page" hidden={active!=="备货数据"}>
-          <div className="warehouse-data-tabs" role="tablist" aria-label="备货数据">
-            {visibleWarehouseDataTabs.map(tab=><button key={tab.key} type="button" role="tab" aria-selected={warehouseDataTab===tab.key} className={warehouseDataTab===tab.key?"active":""} onClick={()=>{setWarehouseDataTab(tab.key);if(tab.key==="warehouse-ledger")setLedgerEntry({tab:"sku",query:""})}}><span aria-hidden="true">{tab.icon}</span>{tab.label}</button>)}
+          <div className="warehouse-data-tabs" role="tablist" aria-label={t("备货数据")}>
+            {visibleWarehouseDataTabs.map(tab=><button key={tab.key} type="button" role="tab" aria-selected={warehouseDataTab===tab.key} className={warehouseDataTab===tab.key?"active":""} onClick={()=>{setWarehouseDataTab(tab.key);if(tab.key==="warehouse-ledger")setLedgerEntry({tab:"sku",query:""})}} data-ui-size=""><span aria-hidden="true">{tab.icon}</span>{t(tab.label)}</button>)}
           </div>
           {allowedPageKeys.has("tasks")&&<div className="warehouse-data-panel" role="tabpanel" hidden={warehouseDataTab!=="tasks"}><TasksView tasks={allTaskGroups} onTask={openTask} invalidSkuCodes={invalidSkuCodes} error={taskHistoryError}/></div>}
           {allowedPageKeys.has("sku-management")&&<div className="warehouse-data-panel" role="tabpanel" hidden={warehouseDataTab!=="sku-management"}><SkuManagement externalRefreshKey={externalSyncKey} onImported={async message=>{notify(message);await refresh()}}/></div>}
@@ -412,27 +415,30 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
       updated={async message=>{notify(message);await refresh()}}/>}
     {modal==="accounts"&&effectiveUser.role==="admin"&&<AccountsModal users={data!.users} currentUserId={effectiveUser.id} close={()=>setModal(null)} api={requestApi} done={async m=>{notify(m);await refresh()}}/>}
     {editingRow&&<InventoryEditModal row={editingRow} locations={data!.locations} close={()=>setEditingRow(null)} api={requestApi} done={async message=>{setEditingRow(null);notify(message);await refresh()}}/>}
-    {toast&&<div className="toast"><span>✓</span>{toast}</div>}
+    {toast&&<div className="toast"><span>✓</span>{t(toast)}</div>}
   </main>;
 }
 
 function Dashboard({stats,tasks,onFlow,onTask,openTasks,data,openHistory,invalidSkuCodes,canOpenTasks,canOpenLedger}:{stats:Stats;tasks:TaskGroup[];onFlow:(m:Modal)=>void;onTask:(t:Task)=>void;openTasks:()=>void;data:AppData;openHistory:()=>void;invalidSkuCodes:Set<string>;canOpenTasks:boolean;canOpenLedger:boolean}) {
+  useLanguage();
   const occupancy=stats.reserveCapacity?Math.round(stats.occupied/stats.reserveCapacity*100):0;
   const now=new Date();
   const recentDateKeys=new Set([warehouseDateKey(now),previousWarehouseDateKey(now)]);
   const recentMovements=data.movements.filter(movement=>recentDateKeys.has(warehouseDateKey(movement.occurredAt)));
-  return <><div className="quick-actions dashboard-quick-actions" aria-label="备货核心操作"><button className="core-action store-action" onClick={()=>onFlow("store")}><span className="qa green">↓</span><b>存备货</b><small>批量入库</small></button><button className="core-action pick-action" onClick={()=>onFlow("pick")}><span className="qa blue">↗</span><b>取备货</b><small>供给拣货位</small></button><button className="core-action move-action" onClick={()=>onFlow("move")}><span className="qa amber">↔</span><b>迁移备货</b><small>库内移位</small></button></div>
+  return <><div className="quick-actions dashboard-quick-actions" aria-label={t("备货核心操作")}><button className="core-action store-action" onClick={()=>onFlow("store")} data-ui-size=""><span className="qa green">↓</span><b>{t("存备货")}</b><small>{t("批量入库")}</small></button><button className="core-action pick-action" onClick={()=>onFlow("pick")} data-ui-size=""><span className="qa blue">↗</span><b>{t("取备货")}</b><small>{t("供给拣货位")}</small></button><button className="core-action move-action" onClick={()=>onFlow("move")} data-ui-size=""><span className="qa amber">↔</span><b>{t("迁移备货")}</b><small>{t("库内移位")}</small></button></div>
     <div className="dashboard-overview-grid"><div className="metric-grid dashboard-metric-grid"><Metric label="备货库存" value={String(stats.pallets)} unit="托" note="当前有效托盘" color="blue"/><Metric label="托盘位占用" value={String(occupancy)} unit="%" note={`${stats.occupied} / ${stats.reserveCapacity} 托盘位`} color="green"/><Metric label="今日已处理托盘" value={String(stats.completedToday)} unit="托" note="今日已确认作业结果" color="violet"/></div>
-      <section className="panel tasks-panel"><div className="panel-title"><div><h3>待办任务</h3><p>{tasks.length} 个待处理任务</p></div>{canOpenTasks&&<button onClick={openTasks}>查看全部 →</button>}</div><div className="task-list">{tasks.length?tasks.map(group=><TaskRow key={group.task.id} task={group.task} rows={group.rows} onClick={()=>onTask(group.task)} invalidSkuCodes={invalidSkuCodes}/>):<Empty text="当前没有待办任务"/>}</div></section></div>
-    <section className="panel dashboard-history"><div className="panel-title"><div><h3>最近操作历史</h3><p>包含今日及前一天的全部操作记录，共 {recentMovements.length} 条</p></div>{canOpenLedger&&<button onClick={openHistory}>查看全部 →</button>}</div><LedgerMovementTable rows={recentMovements} invalidSkuCodes={invalidSkuCodes}/></section>
+      <section className="panel tasks-panel"><div className="panel-title"><div><h3 data-ui-size="">{t("待办任务")}</h3><p>{tasks.length} {t("个待处理任务")}</p></div>{canOpenTasks&&<button onClick={openTasks} data-ui-size="">{t("查看全部 →")}</button>}</div><div className="task-list">{tasks.length?tasks.map(group=><TaskRow key={group.task.id} task={group.task} rows={group.rows} onClick={()=>onTask(group.task)} invalidSkuCodes={invalidSkuCodes}/>):<Empty text="当前没有待办任务"/>}</div></section></div>
+    <section className="panel dashboard-history"><div className="panel-title"><div><h3 data-ui-size="">{t("最近操作历史")}</h3><p>{t("包含今日及前一天的全部操作记录，共")} {recentMovements.length} {t("条")}</p></div>{canOpenLedger&&<button onClick={openHistory} data-ui-size="">{t("查看全部 →")}</button>}</div><LedgerMovementTable rows={recentMovements} invalidSkuCodes={invalidSkuCodes}/></section>
   </>;
 }
 
 function Metric({label,value,unit,note,color}:{label:string;value:string;unit:string;note:string;color:string}) {
-  return <article className="metric"><div className={`metric-icon ${color}`}>{color==="blue"?"▦":color==="green"?"◎":"✓"}</div><div className="metric-copy"><p>{label}</p><h3><strong>{value}</strong><span>{unit}</span></h3><small>{note}</small></div></article>;
+  useLanguage();
+  return <article className="metric"><div className={`metric-icon ${color}`}>{color==="blue"?"▦":color==="green"?"◎":"✓"}</div><div className="metric-copy"><p>{t(label)}</p><h3 data-ui-size=""><strong>{value}</strong><span>{t(unit)}</span></h3><small>{t(note)}</small></div></article>;
 }
 
 function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done,onLocation,onEdit,invalidSkuCodes}:{pallets:Pallet[];locations:Location[];selected:string[];setSelected:(v:string[])=>void;onFlow:(v:"pick"|"move",palletIds?:string[])=>void;notify:(v:string)=>void;done:(message:string)=>void|Promise<void>;onLocation?:((v:string)=>void);onEdit:(row:ReserveRow)=>void;invalidSkuCodes:Set<string>}) {
+  useLanguage();
   const [skuQuery,setSkuQuery]=useState("");
   const [exactSkuQuery,setExactSkuQuery]=useState("");
   const [locationQuery,setLocationQuery]=useState("");
@@ -490,7 +496,7 @@ function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done
       return sortDirection==="asc"?result:-result;
     });
   },[allRows,skuQuery,exactSkuCodes,locationQuery,inboundFrom,inboundTo,status,sortKey,sortDirection,invalidSkuCodes]);
-  const sortable=(key:SortKey,label:string)=><button className="sort-button" aria-label={`按${label}排序`} onClick={()=>{if(sortKey===key)setSortDirection(value=>value==="asc"?"desc":"asc");else{setSortKey(key);setSortDirection("asc")}}}>{label}<span aria-hidden="true">{sortKey===key?(sortDirection==="asc"?"▲":"▼"):"▲▼"}</span></button>;
+  const sortable=(key:SortKey,label:string)=><button className="sort-button" aria-label={t("按{0}排序", {0: label})} onClick={()=>{if(sortKey===key)setSortDirection(value=>value==="asc"?"desc":"asc");else{setSortKey(key);setSortDirection("asc")}}} data-ui-size="">{t(label)}<span aria-hidden="true">{sortKey===key?(sortDirection==="asc"?"▲":"▼"):"▲▼"}</span></button>;
   const selectable=rows.map(reserveRowSelectionKey);
   const selectedRows=rows.filter(row=>selected.includes(reserveRowSelectionKey(row)));
   const selectedPalletIds=selectedRows.flatMap(row=>row.pallet?.status==="in_stock"?[row.pallet.id]:[]);
@@ -536,42 +542,49 @@ function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done
     }
   };
   const filterCount=[skuQuery,exactSkuQuery,locationQuery,inboundFrom,inboundTo,status==="all"?"":status].filter(Boolean).length;
-  return <section className="panel inventory-panel reserve-table"><div className="panel-title inventory-title"><div><h3>备库托盘与库位总表</h3><p>共 {allRows.length} 个托盘位，当前 {allRows.filter(row=>row.pallet).length} 托在库</p></div><div className="inventory-title-actions selection-toolbar"><button className="reserve-statistics-export" disabled={!statistics.length} onClick={()=>void exportStatistics()}>⇩ 导出备货统计</button><label className={importing?"reserve-import-button busy":"reserve-import-button"}>⇧ {importing?"正在导入…":"导入备库总表"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing} onChange={importReserveWorkbook}/></label><b className="selection-count">已选 <strong>{selectedRows.length}</strong> 条记录</b><button className="selected-export" disabled={!selectedRows.length} onClick={exportSelected}>导出已选</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("pick",selectedPalletIds)}>批量取备货</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("move",selectedPalletIds)}>批量迁移</button><button className="cancel-selection" disabled={!selectedRows.length} onClick={()=>setSelected([])}>取消</button></div></div>
-    {importError&&<div className="reserve-import-error" role="alert">! {importError}</div>}
+  return <section className="panel inventory-panel reserve-table"><div className="panel-title inventory-title"><div><h3 data-ui-size="">{t("备库托盘与库位总表")}</h3><p>{t("共")} {allRows.length} {t("个托盘位，当前")} {allRows.filter(row=>row.pallet).length} {t("托在库")}</p></div><div className="inventory-title-actions selection-toolbar"><button className="reserve-statistics-export" disabled={!statistics.length} onClick={()=>void exportStatistics()} data-ui-size="">{t("⇩ 导出备货统计")}</button><label className={importing?"reserve-import-button busy":"reserve-import-button"}>⇧ {importing?t("正在导入…"):t("导入备库总表")}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing} onChange={importReserveWorkbook}/></label><b className="selection-count">{t("已选")} <strong>{selectedRows.length}</strong> {t("条记录")}</b><button className="selected-export" disabled={!selectedRows.length} onClick={exportSelected} data-ui-size="">{t("导出已选")}</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("pick",selectedPalletIds)} data-ui-size="">{t("批量取备货")}</button><button disabled={!selectedPalletIds.length} onClick={()=>onFlow("move",selectedPalletIds)} data-ui-size="">{t("批量迁移")}</button><button className="cancel-selection" disabled={!selectedRows.length} onClick={()=>setSelected([])} data-ui-size="">{t("取消")}</button></div></div>
+    {importError&&<div className="reserve-import-error" role="alert">! {t(importError)}</div>}
+    <div className="reserve-mobile-search" role="search" aria-label={t("备库 SKU 搜索")}>
+      <div className="reserve-mobile-search-field">
+        <span aria-hidden="true">⌕</span>
+        <input aria-label={t("手机端搜索 SKU")} type="text" inputMode="search" enterKeyHint="search" autoComplete="off" autoCapitalize="none" spellCheck={false} value={skuQuery} onChange={event=>setSkuQuery(event.target.value)} placeholder={t("输入 SKU 模糊搜索")}/>
+        <button type="button" aria-label={t("清除 SKU 搜索")} disabled={!skuQuery} onClick={()=>setSkuQuery("")}>×</button>
+      </div>
+    </div>
     <div className="reserve-filter-panel">
       <div className="reserve-filter-bar">
-        <label className="filter-field search-field"><span>库位</span><div><i>⌕</i><input aria-label="搜索库位" value={locationQuery} onChange={e=>setLocationQuery(e.target.value)} placeholder="模糊搜索库位"/></div></label>
-        <label className="filter-field search-field"><span>SKU</span><div><i>⌕</i><input aria-label="搜索 SKU" value={skuQuery} onChange={e=>setSkuQuery(e.target.value)} placeholder="模糊搜索 SKU"/></div></label>
-        <label className="filter-field search-field exact-sku-field"><span>多个 SKU（精确）</span><div><i>≡</i><textarea rows={1} aria-label="精确搜索多个 SKU" value={exactSkuQuery} onChange={e=>setExactSkuQuery(e.target.value)} placeholder="逗号、分号或换行分隔"/></div></label>
-        <label className="filter-field status-filter"><span>状态</span><select aria-label="库存状态" value={status} onChange={e=>setStatus(e.target.value)}><option value="all">全部状态</option><option value="in_stock">在库</option><option value="in_task">作业中</option><option value="available">空托盘位</option></select></label>
-        <fieldset className="filter-field date-filter"><legend>入库日期</legend><div className="date-range"><input aria-label="入库开始日期" type="date" value={inboundFrom} max={inboundTo||undefined} onInput={e=>setInboundFrom(e.currentTarget.value)}/><span>—</span><input aria-label="入库结束日期" type="date" value={inboundTo} min={inboundFrom||undefined} onInput={e=>setInboundTo(e.currentTarget.value)}/></div></fieldset>
-        <button className="clear-filters" disabled={!filterCount} onClick={clearFilters}>重置</button>
+        <label className="filter-field search-field"><span>{t("库位")}</span><div><i>⌕</i><input aria-label={t("搜索库位")} value={locationQuery} onChange={e=>setLocationQuery(e.target.value)} placeholder={t("模糊搜索库位")}/></div></label>
+        <label className="filter-field search-field"><span>SKU</span><div><i>⌕</i><input aria-label={t("搜索 SKU")} value={skuQuery} onChange={e=>setSkuQuery(e.target.value)} placeholder={t("模糊搜索 SKU")}/></div></label>
+        <label className="filter-field search-field exact-sku-field"><span>{t("多个 SKU（精确）")}</span><div><i>≡</i><textarea rows={1} aria-label={t("精确搜索多个 SKU")} value={exactSkuQuery} onChange={e=>setExactSkuQuery(e.target.value)} placeholder={t("逗号、分号或换行分隔")}/></div></label>
+        <label className="filter-field status-filter"><span>{t("状态")}</span><select aria-label={t("库存状态")} value={status} onChange={e=>setStatus(e.target.value)}><option value="all">{t("全部状态")}</option><option value="in_stock">{t("在库")}</option><option value="in_task">{t("作业中")}</option><option value="available">{t("空托盘位")}</option></select></label>
+        <fieldset className="filter-field date-filter"><legend>{t("入库日期")}</legend><div className="date-range"><input aria-label={t("入库开始日期")} type="date" value={inboundFrom} max={inboundTo||undefined} onInput={e=>setInboundFrom(e.currentTarget.value)}/><span>—</span><input aria-label={t("入库结束日期")} type="date" value={inboundTo} min={inboundFrom||undefined} onInput={e=>setInboundTo(e.currentTarget.value)}/></div></fieldset>
+        <button className="clear-filters" disabled={!filterCount} onClick={clearFilters} data-ui-size="">{t("重置")}</button>
       </div>
-      <div className="filter-summary"><span>找到 <b>{rows.length}</b> 条记录</span>{filterCount>0&&<em>已启用 {filterCount} 项筛选{exactSkuCodes.size>0&&` · 精确 SKU ${exactSkuCodes.size} 个`}</em>}</div>
+      <div className="filter-summary"><span>{t("找到")} <b>{rows.length}</b> {t("条记录")}</span>{filterCount>0&&<em>{t("已启用")} {filterCount} {t("项筛选")}{exactSkuCodes.size>0&&t(" · 精确 SKU {0} 个", {0: exactSkuCodes.size})}</em>}</div>
     </div>
     <div className="table-scroll">
       <table>
         <thead><tr>
-          <th><div className="indexed-location table-location-header"><input type="checkbox" aria-label="全选当前筛选结果" checked={selectable.length>0&&selectable.every(id=>selected.includes(id))} onChange={e=>setSelected(e.target.checked?selectable:[])}/>{sortable("location","库位")}</div></th>
+          <th data-ui-size=""><div className="indexed-location table-location-header"><input type="checkbox" aria-label={t("全选当前筛选结果")} checked={selectable.length>0&&selectable.every(id=>selected.includes(id))} onChange={e=>setSelected(e.target.checked?selectable:[])}/>{sortable("location","库位")}</div></th>
           <th>{sortable("sku","SKU")}</th>
-          <th>备注说明</th>
+          <th data-ui-size="">{t("备注说明")}</th>
           <th>{sortable("inboundAt","入库时间（美东）")}</th>
           <th>{sortable("ageDays","库龄")}</th>
           <th>{sortable("status","状态")}</th>
-          <th className="pallet-column"><span className="visually-hidden">托盘号</span></th>
-          <th className="action-column">操作</th>
+          <th className="pallet-column" data-ui-size=""><span className="visually-hidden">{t("托盘号")}</span></th>
+          <th className="action-column" data-ui-size="">{t("操作")}</th>
         </tr></thead>
         <tbody>{rows.map(row=>{
           const pallet=row.pallet,state=reserveRowStatus(row),selectionKey=reserveRowSelectionKey(row);
           return <tr key={`${row.location.id}-${row.slotIndex}-${pallet?.id??"empty"}`} className={!pallet?"empty-location-row":""}>
-            <td><div className="indexed-location"><input type="checkbox" aria-label={pallet?`选择 ${pallet.id}`:`选择空托盘位 ${row.location.code}`} checked={selected.includes(selectionKey)} onChange={e=>setSelected(e.target.checked?[...selected,selectionKey]:selected.filter(id=>id!==selectionKey))}/>{onLocation?<button className="location-link" onClick={()=>onLocation(row.location.code)}>{row.location.code}</button>:<span className="location-code">{row.location.code}</span>}{row.location.capacity>1&&<span className="slot-badge">{row.slotIndex}/{row.location.capacity}</span>}</div></td>
-            <td>{pallet?<b className={invalidSkuCodes.has(pallet.sku)?"sku-code invalid-sku":"sku-code"} title={invalidSkuCodes.has(pallet.sku)?"未在 SKU 主数据中找到":undefined}>{pallet.sku}</b>:<span className="empty-cell">空托盘位</span>}</td>
-            <td>{pallet?.remarks?<span className="pallet-remarks">{pallet.remarks}</span>:<span className="empty-cell">{pallet?"无备注":"—"}</span>}</td>
+            <td><div className="indexed-location"><input type="checkbox" aria-label={pallet?t("选择 {0}", {0: pallet.id}):t("选择空托盘位 {0}", {0: row.location.code})} checked={selected.includes(selectionKey)} onChange={e=>setSelected(e.target.checked?[...selected,selectionKey]:selected.filter(id=>id!==selectionKey))}/>{onLocation?<button className="location-link" onClick={()=>onLocation(row.location.code)}>{row.location.code}</button>:<span className="location-code">{row.location.code}</span>}{row.location.capacity>1&&<span className="slot-badge">{row.slotIndex}/{row.location.capacity}</span>}</div></td>
+            <td>{pallet?<b className={invalidSkuCodes.has(pallet.sku)?"sku-code invalid-sku":"sku-code"} title={invalidSkuCodes.has(pallet.sku)?t("未在 SKU 主数据中找到"):undefined}>{pallet.sku}</b>:<span className="empty-cell">{t("空托盘位")}</span>}</td>
+            <td>{pallet?.remarks?<span className="pallet-remarks">{pallet.remarks}</span>:<span className="empty-cell">{pallet?t("无备注"):"—"}</span>}</td>
             <td>{pallet?formatTime(pallet.inboundAt):<span className="empty-cell">—</span>}</td>
-            <td>{pallet?<span className="age">{pallet.ageDays} 天</span>:<span className="empty-cell">—</span>}</td>
-            <td><span className={`status ${state==="in_task"?"working":state==="available"?"empty":""}`}><i/>{reserveStatusLabel(state)}</span></td>
+            <td>{pallet?<span className="age">{pallet.ageDays} {t("天")}</span>:<span className="empty-cell">—</span>}</td>
+            <td><span className={`status ${state==="in_task"?"working":state==="available"?"empty":""}`}><i/>{t(reserveStatusLabel(state))}</span></td>
             <td className="pallet-column">{pallet?<code className="pallet-code">{pallet.id}</code>:<span className="empty-cell">—</span>}</td>
-            <td className="action-column"><button className="edit-record" onClick={()=>onEdit(row)}>编辑</button></td>
+            <td className="action-column"><button className="edit-record" onClick={()=>onEdit(row)} data-ui-size="">{t("编辑")}</button></td>
           </tr>;
         })}</tbody>
       </table>
@@ -581,6 +594,7 @@ function ReserveTable({pallets,locations,selected,setSelected,onFlow,notify,done
 }
 
 function SkuManagement({onImported,externalRefreshKey}:{onImported:(message:string)=>void|Promise<void>;externalRefreshKey:number}) {
+  useLanguage();
   const [rows,setRows]=useState<SkuCatalogRecord[]>([]);
   const [meta,setMeta]=useState<SkuCatalogMeta>({page:1,pageSize:100,total:0,uniqueCodes:0,activeRows:0,lastImportedAt:null});
   const [q,setQ]=useState(""),[page,setPage]=useState(1),[refreshKey,setRefreshKey]=useState(0);
@@ -657,43 +671,44 @@ function SkuManagement({onImported,externalRefreshKey}:{onImported:(message:stri
   };
   return <section className="panel sku-management">
     <div className="sku-management-head">
-      <div><span>SKU MASTER DATA</span><h2>SKU管理</h2><p>WMS 产品主数据用于核对备货区 SKU；未收录的在库 SKU 会以红色显示。</p></div>
+      <div><span>SKU MASTER DATA</span><h2 data-ui-size="">{t("SKU管理")}</h2><p>{t("WMS 产品主数据用于核对备货区 SKU；未收录的在库 SKU 会以红色显示。")}</p></div>
       <div className="sku-management-actions">
-        <button className="sku-manual-add-button" type="button" disabled={importing||saving} onClick={()=>{setAdding(value=>!value);setError("")}}>＋ 手动添加 SKU</button>
-        <label className={importing?"sku-import-button busy":"sku-import-button"}>⇧ {importing?`正在导入 ${importProgress}%`:"导入 SKU 数据"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing||saving} onChange={importWorkbook}/></label>
+        <button className="sku-manual-add-button" type="button" disabled={importing||saving} onClick={()=>{setAdding(value=>!value);setError("")}} data-ui-size="">{t("＋ 手动添加 SKU")}</button>
+        <label className={importing?"sku-import-button busy":"sku-import-button"}>⇧ {importing?t("正在导入 {0}%", {0: importProgress}):t("导入 SKU 数据")}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing||saving} onChange={importWorkbook}/></label>
       </div>
     </div>
     {adding&&<form className="sku-manual-form" onSubmit={createSku}>
-      <div className="sku-manual-form-title"><div><b>手动添加 SKU</b><span>SKU 为必填项，系统会忽略大小写校验重复；其余信息可选填。</span></div></div>
+      <div className="sku-manual-form-title"><div><b>{t("手动添加 SKU")}</b><span>{t("SKU 为必填项，系统会忽略大小写校验重复；其余信息可选填。")}</span></div></div>
       <div className="sku-manual-fields">
-        <label><span>SKU <b>*</b></span><input autoFocus required value={draft.code} onChange={event=>setDraft(value=>({...value,code:event.target.value.toUpperCase()}))} placeholder="输入 SKU"/></label>
-        <label><span>产品条码</span><input value={draft.barcode} onChange={event=>setDraft(value=>({...value,barcode:event.target.value}))} placeholder="选填"/></label>
-        <label><span>客户</span><input value={draft.client} onChange={event=>setDraft(value=>({...value,client:event.target.value}))} placeholder="选填"/></label>
-        <label><span>产品名称</span><input value={draft.productName} onChange={event=>setDraft(value=>({...value,productName:event.target.value}))} placeholder="选填"/></label>
-        <label><span>申报中文名</span><input value={draft.declaredChineseName} onChange={event=>setDraft(value=>({...value,declaredChineseName:event.target.value}))} placeholder="选填"/></label>
+        <label><span>SKU <b>*</b></span><input autoFocus required value={draft.code} onChange={event=>setDraft(value=>({...value,code:event.target.value.toUpperCase()}))} placeholder={t("输入 SKU")}/></label>
+        <label><span>{t("产品条码")}</span><input value={draft.barcode} onChange={event=>setDraft(value=>({...value,barcode:event.target.value}))} placeholder={t("选填")}/></label>
+        <label><span>{t("客户")}</span><input value={draft.client} onChange={event=>setDraft(value=>({...value,client:event.target.value}))} placeholder={t("选填")}/></label>
+        <label><span>{t("产品名称")}</span><input value={draft.productName} onChange={event=>setDraft(value=>({...value,productName:event.target.value}))} placeholder={t("选填")}/></label>
+        <label><span>{t("申报中文名")}</span><input value={draft.declaredChineseName} onChange={event=>setDraft(value=>({...value,declaredChineseName:event.target.value}))} placeholder={t("选填")}/></label>
       </div>
-      <div className="sku-manual-form-actions"><button type="button" onClick={()=>{setAdding(false);setError("")}}>取消</button><button type="submit" disabled={saving}>{saving?"正在添加…":"添加 SKU"}</button></div>
+      <div className="sku-manual-form-actions"><button type="button" onClick={()=>{setAdding(false);setError("")}} data-ui-size="">{t("取消")}</button><button type="submit" disabled={saving} data-ui-size="">{saving?t("正在添加…"):t("添加 SKU")}</button></div>
     </form>}
     <div className="sku-catalog-stats">
-      <p><span>有效产品记录</span><b>{meta.activeRows.toLocaleString()}</b></p>
-      <p><span>唯一 SKU</span><b>{meta.uniqueCodes.toLocaleString()}</b></p>
-      <p><span>同名 SKU 记录</span><b>{Math.max(0,meta.activeRows-meta.uniqueCodes).toLocaleString()}</b></p>
-      <p><span>最近更新（美东）</span><b>{meta.lastImportedAt?formatLedgerTime(meta.lastImportedAt):"尚未导入"}</b></p>
+      <p><span>{t("有效产品记录")}</span><b>{meta.activeRows.toLocaleString()}</b></p>
+      <p><span>{t("唯一 SKU")}</span><b>{meta.uniqueCodes.toLocaleString()}</b></p>
+      <p><span>{t("同名 SKU 记录")}</span><b>{Math.max(0,meta.activeRows-meta.uniqueCodes).toLocaleString()}</b></p>
+      <p><span>{t("最近更新（美东）")}</span><b>{meta.lastImportedAt?formatLedgerTime(meta.lastImportedAt):t("尚未导入")}</b></p>
     </div>
     <div className="sku-catalog-toolbar">
-      <label><span>⌕</span><input aria-label="搜索 SKU 主数据" value={q} onChange={event=>{setQ(event.target.value);setPage(1)}} placeholder="搜索 SKU、产品条码、客户、产品名称或申报中文名"/></label>
-      <span>找到 {meta.total.toLocaleString()} 条记录</span>
+      <label><span>⌕</span><input aria-label={t("搜索 SKU 主数据")} value={q} onChange={event=>{setQ(event.target.value);setPage(1)}} placeholder={t("搜索 SKU、产品条码、客户、产品名称或申报中文名")}/></label>
+      <span>{t("找到")} {meta.total.toLocaleString()} {t("条记录")}</span>
     </div>
-    {error&&<div className="sku-catalog-error">! {error}</div>}
+    {error&&<div className="sku-catalog-error">! {t(error)}</div>}
     <div className="table-scroll"><table className="sku-catalog-table">
-      <thead><tr><th>SKU</th><th>产品条码</th><th>客户</th><th>产品名称</th><th>申报中文名</th></tr></thead>
+      <thead><tr><th>SKU</th><th data-ui-size="">{t("产品条码")}</th><th data-ui-size="">{t("客户")}</th><th data-ui-size="">{t("产品名称")}</th><th data-ui-size="">{t("申报中文名")}</th></tr></thead>
       <tbody>{rows.map(row=><tr key={row.id}><td><b className="catalog-sku">{row.sku}</b></td><td>{row.barcode||"—"}</td><td>{row.client||"—"}</td><td>{row.productName||"—"}</td><td>{row.declaredChineseName||"—"}</td></tr>)}</tbody>
     </table>{!loading&&!rows.length&&<Empty text="没有符合条件的 SKU 主数据"/>}</div>
-    <div className="sku-catalog-pagination"><span>每页 {meta.pageSize} 条 · 第 {meta.page}/{totalPages} 页</span><div><button disabled={page<=1||loading} onClick={()=>setPage(value=>Math.max(1,value-1))}>上一页</button><button disabled={page>=totalPages||loading} onClick={()=>setPage(value=>Math.min(totalPages,value+1))}>下一页</button></div></div>
+    <div className="sku-catalog-pagination"><span>{t("每页")} {meta.pageSize} {t("条 · 第")} {meta.page}/{totalPages} {t("页")}</span><div><button disabled={page<=1||loading} onClick={()=>setPage(value=>Math.max(1,value-1))} data-ui-size="">{t("上一页")}</button><button disabled={page>=totalPages||loading} onClick={()=>setPage(value=>Math.min(totalPages,value+1))} data-ui-size="">{t("下一页")}</button></div></div>
   </section>;
 }
 
 function LocationManagement({locations,api,done,loading,externalError}:{locations:Location[];api:ApiRequest;done:(m:string)=>void|Promise<void>;loading:boolean;externalError:string}) {
+  useLanguage();
   const [viewType,setViewType]=useState<"reserve"|"pick">("reserve");
   const [q,setQ]=useState(""),[page,setPage]=useState(1),[adding,setAdding]=useState(false),[busy,setBusy]=useState(false),[importing,setImporting]=useState(false),[error,setError]=useState("");
   const [code,setCode]=useState(""),[zone,setZone]=useState(""),[capacity,setCapacity]=useState("1");
@@ -727,18 +742,19 @@ function LocationManagement({locations,api,done,loading,externalError}:{location
       setImporting(false);input.value="";
     }
   };
-  return <section className="panel location-management"><div className="management-head"><div><h3>库位管理</h3><p>备货库位与拣货库位独立管理；即使名称相同，也属于两个不同库位。</p></div><div className="management-head-actions"><button className="location-export-button" disabled={loading||!locations.length} onClick={()=>void downloadLocationImportWorkbook(locations)}>⇩ 导出全部库位</button><a className="location-template-button" href="/neiku-location-import-template.xlsx" download="内库库位导入模板.xlsx">⇩ 下载 Excel 模板</a><label className={importing?"location-import-button busy":"location-import-button"}>⇧ {importing?"正在导入…":"批量导入库位"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing} onChange={importLocations}/></label><button className="primary" onClick={()=>{setAdding(value=>!value);setDraft(null);setError("")}}>＋ 新增{locationTypeLabel(viewType)}</button></div></div>
-    {externalError&&<div className="management-error">! {externalError}</div>}
-    <div className="location-type-tabs" role="tablist" aria-label="库位类型"><button role="tab" aria-selected={viewType==="reserve"} className={viewType==="reserve"?"active":""} onClick={()=>switchType("reserve")}><span>备货库位</span><b>{counts.reserve}</b></button><button role="tab" aria-selected={viewType==="pick"} className={viewType==="pick"?"active":""} onClick={()=>switchType("pick")}><span>拣货库位</span><b>{counts.pick}</b></button></div>
-    {adding&&<form className="location-create-form typed-location-create" onSubmit={create}><div className={`location-create-type ${viewType}`}><span>当前新增类型</span><b>{locationTypeLabel(viewType)}</b><small>同名的另一类型库位不会被覆盖</small></div><label>库位编码<input required value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder={viewType==="reserve"?"例如 A-A-001":"例如 A-1-001"}/></label><label>区域<input value={zone} onChange={e=>setZone(e.target.value.toUpperCase())} placeholder="默认取编码首段"/></label><label>托盘容量<input required type="number" min="1" max="999" value={capacity} onChange={e=>setCapacity(e.target.value)}/></label><div><button type="button" onClick={()=>setAdding(false)}>取消</button><button className="primary" disabled={busy}>{busy?"正在新增…":`确认新增${locationTypeLabel(viewType)}`}</button></div></form>}
-    <div className="management-toolbar"><label>⌕<input value={q} onChange={e=>{setQ(e.target.value);setPage(1)}} placeholder={`搜索${locationTypeLabel(viewType)}或区域`}/></label><span>找到 {rows.length} 个 · 第 {page}/{totalPages} 页</span></div>
-    {error&&<div className="management-error">! {error}</div>}
-    <div className="table-scroll"><table className="location-management-table"><thead><tr><th>库位</th><th>类型</th><th>区域</th><th>托盘容量</th><th>已占用</th><th>可用</th><th>操作</th></tr></thead><tbody>{visibleRows.map(location=>{const editing=draft?.locationId===location.id;return <tr key={location.id}><td>{editing?<input value={draft.code} onChange={e=>setDraft({...draft,code:e.target.value.toUpperCase()})}/>:<b className="managed-location-code">{location.code}</b>}</td><td><span className={`location-type-badge ${location.type}`}>{locationTypeLabel(location.type)}</span></td><td>{editing?<input value={draft.zone} onChange={e=>setDraft({...draft,zone:e.target.value.toUpperCase()})}/>:location.zone}</td><td>{editing?<input type="number" min="1" max="999" value={draft.capacity} onChange={e=>setDraft({...draft,capacity:e.target.value})}/>:<strong>{location.capacity}</strong>}</td><td>{location.palletCount}</td><td><b className="available-count">{availableLocationSlots(location)}</b></td><td><div className="management-actions">{editing?<><button disabled={busy} onClick={save}>保存</button><button onClick={()=>setDraft(null)}>取消</button></>:<button onClick={()=>{setDraft({locationId:location.id,originalCode:location.code,originalType:location.type,code:location.code,zone:location.zone,capacity:String(location.capacity)});setAdding(false);setError("")}}>编辑</button>}</div></td></tr>})}</tbody></table></div>
-    <div className="location-pagination"><span>每页最多 {pageSize} 个库位</span><div><button disabled={page<=1} onClick={()=>setPage(value=>Math.max(1,value-1))}>上一页</button><b>{page} / {totalPages}</b><button disabled={page>=totalPages} onClick={()=>setPage(value=>Math.min(totalPages,value+1))}>下一页</button></div></div>
+  return <section className="panel location-management"><div className="management-head"><div><h3 data-ui-size="">{t("库位管理")}</h3><p>{t("备货库位与拣货库位独立管理；即使名称相同，也属于两个不同库位。")}</p></div><div className="management-head-actions"><button className="location-export-button" disabled={loading||!locations.length} onClick={()=>void downloadLocationImportWorkbook(locations)} data-ui-size="">{t("⇩ 导出全部库位")}</button><a className="location-template-button" href="/neiku-location-import-template.xlsx" download="内库库位导入模板.xlsx">{t("⇩ 下载 Excel 模板")}</a><label className={importing?"location-import-button busy":"location-import-button"}>⇧ {importing?t("正在导入…"):t("批量导入库位")}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing} onChange={importLocations}/></label><button className="primary" onClick={()=>{setAdding(value=>!value);setDraft(null);setError("")}} data-ui-size="">{t("＋ 新增")}{t(locationTypeLabel(viewType))}</button></div></div>
+    {externalError&&<div className="management-error">! {t(externalError)}</div>}
+    <div className="location-type-tabs" role="tablist" aria-label={t("库位类型")}><button role="tab" aria-selected={viewType==="reserve"} className={viewType==="reserve"?"active":""} onClick={()=>switchType("reserve")} data-ui-size=""><span>{t("备货库位")}</span><b>{counts.reserve}</b></button><button role="tab" aria-selected={viewType==="pick"} className={viewType==="pick"?"active":""} onClick={()=>switchType("pick")} data-ui-size=""><span>{t("拣货库位")}</span><b>{counts.pick}</b></button></div>
+    {adding&&<form className="location-create-form typed-location-create" onSubmit={create}><div className={`location-create-type ${viewType}`}><span>{t("当前新增类型")}</span><b>{t(locationTypeLabel(viewType))}</b><small>{t("同名的另一类型库位不会被覆盖")}</small></div><label>{t("库位编码")}<input required value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder={viewType==="reserve"?t("例如 A-A-001"):t("例如 A-1-001")}/></label><label>{t("区域")}<input value={zone} onChange={e=>setZone(e.target.value.toUpperCase())} placeholder={t("默认取编码首段")}/></label><label>{t("托盘容量")}<input required type="number" min="1" max="999" value={capacity} onChange={e=>setCapacity(e.target.value)}/></label><div><button type="button" onClick={()=>setAdding(false)} data-ui-size="">{t("取消")}</button><button className="primary" disabled={busy} data-ui-size="">{busy?t("正在新增…"):t("确认新增{0}", {0: t(locationTypeLabel(viewType))})}</button></div></form>}
+    <div className="management-toolbar"><label>⌕<input value={q} onChange={e=>{setQ(e.target.value);setPage(1)}} placeholder={t("搜索{0}或区域", {0: t(locationTypeLabel(viewType))})}/></label><span>{t("找到")} {rows.length} {t("个 · 第")} {page}/{totalPages} {t("页")}</span></div>
+    {error&&<div className="management-error">! {t(error)}</div>}
+    <div className="table-scroll"><table className="location-management-table"><thead><tr><th data-ui-size="">{t("库位")}</th><th data-ui-size="">{t("类型")}</th><th data-ui-size="">{t("区域")}</th><th data-ui-size="">{t("托盘容量")}</th><th data-ui-size="">{t("已占用")}</th><th data-ui-size="">{t("可用")}</th><th data-ui-size="">{t("操作")}</th></tr></thead><tbody>{visibleRows.map(location=>{const editing=draft?.locationId===location.id;return <tr key={location.id}><td>{editing?<input value={draft.code} onChange={e=>setDraft({...draft,code:e.target.value.toUpperCase()})}/>:<b className="managed-location-code">{location.code}</b>}</td><td><span className={`location-type-badge ${location.type}`}>{t(locationTypeLabel(location.type))}</span></td><td>{editing?<input value={draft.zone} onChange={e=>setDraft({...draft,zone:e.target.value.toUpperCase()})}/>:location.zone}</td><td>{editing?<input type="number" min="1" max="999" value={draft.capacity} onChange={e=>setDraft({...draft,capacity:e.target.value})}/>:<strong>{location.capacity}</strong>}</td><td>{location.palletCount}</td><td><b className="available-count">{availableLocationSlots(location)}</b></td><td><div className="management-actions">{editing?<><button disabled={busy} onClick={save} data-ui-size="">{t("保存")}</button><button onClick={()=>setDraft(null)} data-ui-size="">{t("取消")}</button></>:<button onClick={()=>{setDraft({locationId:location.id,originalCode:location.code,originalType:location.type,code:location.code,zone:location.zone,capacity:String(location.capacity)});setAdding(false);setError("")}} data-ui-size="">{t("编辑")}</button>}</div></td></tr>})}</tbody></table></div>
+    <div className="location-pagination"><span>{t("每页最多")} {pageSize} {t("个库位")}</span><div><button disabled={page<=1} onClick={()=>setPage(value=>Math.max(1,value-1))} data-ui-size="">{t("上一页")}</button><b>{page} / {totalPages}</b><button disabled={page>=totalPages} onClick={()=>setPage(value=>Math.min(totalPages,value+1))} data-ui-size="">{t("下一页")}</button></div></div>
   </section>;
 }
 
 function InventoryEditModal({row,locations,close,api,done}:{row:ReserveRow;locations:Location[];close:()=>void;api:ApiRequest;done:(m:string)=>void|Promise<void>}) {
+  useLanguage();
   const pallet=row.pallet;
   const [sku,setSku]=useState(pallet?.sku??""),[locationCode,setLocationCode]=useState(row.location.code);
   const [remarks,setRemarks]=useState(pallet?.remarks??"");
@@ -747,10 +763,11 @@ function InventoryEditModal({row,locations,close,api,done}:{row:ReserveRow;locat
   const [busy,setBusy]=useState(false),[error,setError]=useState("");
   const availableLocations=locations.filter(location=>location.type==="reserve"&&(location.code===row.location.code||availableLocationSlots(location)>0));
   const submit=async(e:FormEvent)=>{e.preventDefault();setBusy(true);setError("");try{if(pallet){await api(`/api/v1/pallets/${encodeURIComponent(pallet.id)}`,{method:"PATCH",body:JSON.stringify({sku,remarks,locationCode,inboundAt:warehouseDateTimeInputToIso(inboundAt)})});await done("托盘记录已更新")}else{await api(`/api/v1/locations/${encodeURIComponent(row.location.code)}?type=reserve`,{method:"PATCH",body:JSON.stringify({code,zone,type:"reserve",capacity:Number(capacity)})});await done("备货库位记录已更新")}}catch(err){setError(err instanceof Error?err.message:"保存失败");setBusy(false)}};
-  return <ModalFrame title={pallet?"编辑托盘记录":"编辑备货库位记录"} kicker="MANUAL EDIT" close={close}><form className="inventory-edit-form" onSubmit={submit}>{pallet?<><div className="readonly-pallet"><span>托盘号</span><code>{pallet.id}</code></div><label>SKU<input required value={sku} onChange={e=>setSku(e.target.value.toUpperCase())}/></label><label>备注说明<input value={remarks} onChange={e=>setRemarks(e.target.value)} placeholder="选填"/></label><label>备货库位<select required value={locationCode} onChange={e=>setLocationCode(e.target.value)}>{availableLocations.map(location=><option key={location.id} value={location.code}>{location.code}（可用 {location.code===row.location.code?Math.max(1,availableLocationSlots(location)):availableLocationSlots(location)}）</option>)}</select></label><label>入库时间（美东）<input required type="datetime-local" value={inboundAt} onChange={e=>setInboundAt(e.target.value)}/></label></>:<><div className="location-type-readonly"><span>库位类型</span><b>备货库位</b><small>库位类型是身份的一部分，不能在此转换为拣货库位</small></div><label>库位编码<input required value={code} onChange={e=>setCode(e.target.value.toUpperCase())}/></label><label>区域<input required value={zone} onChange={e=>setZone(e.target.value.toUpperCase())}/></label><label>托盘容量<input required type="number" min="1" max="999" value={capacity} onChange={e=>setCapacity(e.target.value)}/></label></>}{error&&<div className="login-error">! {error}</div>}<div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary" disabled={busy}>{busy?"正在保存…":"保存修改"}</button></div></form></ModalFrame>;
+  return <ModalFrame title={pallet?t("编辑托盘记录"):t("编辑备货库位记录")} kicker="MANUAL EDIT" close={close}><form className="inventory-edit-form" onSubmit={submit}>{pallet?<><div className="readonly-pallet"><span>{t("托盘号")}</span><code>{pallet.id}</code></div><label>SKU<input required value={sku} onChange={e=>setSku(e.target.value.toUpperCase())}/></label><label>{t("备注说明")}<input value={remarks} onChange={e=>setRemarks(e.target.value)} placeholder={t("选填")}/></label><label>{t("备货库位")}<select required value={locationCode} onChange={e=>setLocationCode(e.target.value)}>{availableLocations.map(location=><option key={location.id} value={location.code}>{location.code}{t("（可用")} {location.code===row.location.code?Math.max(1,availableLocationSlots(location)):availableLocationSlots(location)}）</option>)}</select></label><label>{t("入库时间（美东）")}<input required type="datetime-local" value={inboundAt} onChange={e=>setInboundAt(e.target.value)}/></label></>:<><div className="location-type-readonly"><span>{t("库位类型")}</span><b>{t("备货库位")}</b><small>{t("库位类型是身份的一部分，不能在此转换为拣货库位")}</small></div><label>{t("库位编码")}<input required value={code} onChange={e=>setCode(e.target.value.toUpperCase())}/></label><label>{t("区域")}<input required value={zone} onChange={e=>setZone(e.target.value.toUpperCase())}/></label><label>{t("托盘容量")}<input required type="number" min="1" max="999" value={capacity} onChange={e=>setCapacity(e.target.value)}/></label></>}{error&&<div className="login-error">! {t(error)}</div>}<div className="modal-actions"><button type="button" onClick={close} data-ui-size="">{t("取消")}</button><button className="primary" disabled={busy} data-ui-size="">{busy?t("正在保存…"):t("保存修改")}</button></div></form></ModalFrame>;
 }
 
 function WarehouseLedger({pallets,locations,movements,initialTab,initialQuery,invalidSkuCodes,loading,error,api,done}:{pallets:Pallet[];locations:Location[];movements:Movement[];initialTab:LedgerTab;initialQuery:string;invalidSkuCodes:Set<string>;loading:boolean;error:string;api:ApiRequest;done:(message:string)=>void|Promise<void>}) {
+  useLanguage();
   const [tab,setTab]=useState<LedgerTab>(initialTab);
   const [q,setQ]=useState(initialQuery);
   const [action,setAction]=useState("all");
@@ -836,62 +853,64 @@ function WarehouseLedger({pallets,locations,movements,initialTab,initialQuery,in
 
   return <section className="panel warehouse-ledger">
     <div className="ledger-overview">
-      <div><span>WAREHOUSE LEDGER</span><h2>仓库台账</h2><p>完整记录 SKU、库位与每一次托盘移动</p></div>
-      <div className="ledger-overview-right"><div className="ledger-transfer-actions"><label className={importing?"busy":""}>⇧ {importing?"正在导入…":"导入仓库台账"}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing||loading} onChange={importLedger}/></label><button disabled={loading||!movements.length} onClick={()=>void exportLedger()}>⇩ 导出全部台账</button></div><div className="ledger-overview-stats"><p><b>{new Set(movements.map(m=>m.sku)).size}</b><span>历史 SKU</span></p><p><b>{touchedLocations}</b><span>有记录库位</span></p><p><b>{movements.length}</b><span>操作记录</span></p></div></div>
+      <div><span>WAREHOUSE LEDGER</span><h2 data-ui-size="">{t("仓库台账")}</h2><p>{t("完整记录 SKU、库位与每一次托盘移动")}</p></div>
+      <div className="ledger-overview-right"><div className="ledger-transfer-actions"><label className={importing?"busy":""}>⇧ {importing?t("正在导入…"):t("导入仓库台账")}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={importing||loading} onChange={importLedger}/></label><button disabled={loading||!movements.length} onClick={()=>void exportLedger()} data-ui-size="">{t("⇩ 导出全部台账")}</button></div><div className="ledger-overview-stats"><p><b>{new Set(movements.map(m=>m.sku)).size}</b><span>{t("历史 SKU")}</span></p><p><b>{touchedLocations}</b><span>{t("有记录库位")}</span></p><p><b>{movements.length}</b><span>{t("操作记录")}</span></p></div></div>
     </div>
-    {error&&<div className="management-error">! {error}</div>}
-    {transferError&&<div className="management-error">! {transferError}</div>}
-    <div className="ledger-tabs" role="tablist" aria-label="仓库台账分类">
-      <button role="tab" aria-selected={tab==="sku"} className={tab==="sku"?"active":""} onClick={()=>changeTab("sku")}>SKU 台账</button>
-      <button role="tab" aria-selected={tab==="location"} className={tab==="location"?"active":""} onClick={()=>changeTab("location")}>库位台账</button>
-      <button role="tab" aria-selected={tab==="history"} className={tab==="history"?"active":""} onClick={()=>changeTab("history")}>操作历史</button>
+    {error&&<div className="management-error">! {t(error)}</div>}
+    {transferError&&<div className="management-error">! {t(transferError)}</div>}
+    <div className="ledger-tabs" role="tablist" aria-label={t("仓库台账分类")}>
+      <button role="tab" aria-selected={tab==="sku"} className={tab==="sku"?"active":""} onClick={()=>changeTab("sku")} data-ui-size="">{t("SKU 台账")}</button>
+      <button role="tab" aria-selected={tab==="location"} className={tab==="location"?"active":""} onClick={()=>changeTab("location")} data-ui-size="">{t("库位台账")}</button>
+      <button role="tab" aria-selected={tab==="history"} className={tab==="history"?"active":""} onClick={()=>changeTab("history")} data-ui-size="">{t("操作历史")}</button>
     </div>
     <div className="ledger-filters">
       <label className="ledger-search"><span>⌕</span><input aria-label={placeholder} value={q} onChange={e=>setQ(e.target.value)} placeholder={placeholder}/></label>
-      <select aria-label="台账动作" value={action} onChange={e=>setAction(e.target.value)}><option value="all">全部动作</option>{Object.entries(actionLabel).map(([value,label])=><option value={value} key={value}>{label}</option>)}</select>
-      <label className="ledger-date"><span>开始日期</span><input type="date" value={dateFrom} max={dateTo||undefined} onChange={e=>setDateFrom(e.target.value)}/></label>
-      <label className="ledger-date"><span>结束日期</span><input type="date" value={dateTo} min={dateFrom||undefined} onChange={e=>setDateTo(e.target.value)}/></label>
-      <button className="ledger-reset" disabled={!filtersActive} onClick={clearFilters}>重置</button>
+      <select aria-label={t("台账动作")} value={action} onChange={e=>setAction(e.target.value)}><option value="all">{t("全部动作")}</option>{Object.entries(actionLabel).map(([value,label])=><option value={value} key={value}>{t(label)}</option>)}</select>
+      <label className="ledger-date"><span>{t("开始日期")}</span><input type="date" value={dateFrom} max={dateTo||undefined} onChange={e=>setDateFrom(e.target.value)}/></label>
+      <label className="ledger-date"><span>{t("结束日期")}</span><input type="date" value={dateTo} min={dateFrom||undefined} onChange={e=>setDateTo(e.target.value)}/></label>
+      <button className="ledger-reset" disabled={!filtersActive} onClick={clearFilters} data-ui-size="">{t("重置")}</button>
     </div>
 
     {tab==="sku"&&<div className="ledger-master-detail">
       <aside className="ledger-master-list">
-        <div className="ledger-list-head"><b>SKU</b><span>{skuGroups.length} 项</span></div>
-        <div className="ledger-list-scroll">{skuGroups.map(group=><button key={group.sku} className={activeSku===group.sku?"active":""} onClick={()=>setSelectedSku(group.sku)}>
-          <span><b className={invalidSkuCodes.has(group.sku)?"invalid-sku":""}>{group.sku}</b><small>{group.currentPallets} 托在库 · {group.events.length} 条记录</small></span><time>{group.last?formatLedgerTime(group.last):"暂无记录"}</time>
+        <div className="ledger-list-head"><b>SKU</b><span>{skuGroups.length} {t("项")}</span></div>
+        <div className="ledger-list-scroll">{skuGroups.map(group=><button key={group.sku} className={activeSku===group.sku?"active":""} onClick={()=>setSelectedSku(group.sku)} data-ui-size="">
+          <span><b className={invalidSkuCodes.has(group.sku)?"invalid-sku":""}>{group.sku}</b><small>{group.currentPallets} {t("托在库 ·")} {group.events.length} {t("条记录")}</small></span><time>{group.last?formatLedgerTime(group.last):t("暂无记录")}</time>
         </button>)}{!skuGroups.length&&<Empty text="没有符合条件的 SKU"/>}</div>
       </aside>
       <div className="ledger-detail">
-        {skuDetail?<><div className="ledger-detail-head"><div><span>SKU 完整流转</span><h3 className={invalidSkuCodes.has(skuDetail.sku)?"invalid-sku":""}>{skuDetail.sku}</h3><p>{skuDetail.locations.length?`当前存放：${skuDetail.locations.join("、")}`:"当前无备货库存"}</p></div><div className="ledger-summary-cards"><p><b>{skuDetail.currentPallets}</b><span>当前托盘</span></p><p><b>{skuDetail.inbound}</b><span>存备货</span></p><p><b>{skuDetail.picked}</b><span>取备货</span></p><p><b>{skuDetail.moved}</b><span>区内迁移</span></p></div></div><LedgerMovementTable rows={skuDetail.events} invalidSkuCodes={invalidSkuCodes}/></>:<Empty text="请选择 SKU 查看流转明细"/>}
+        {skuDetail?<><div className="ledger-detail-head"><div><span>{t("SKU 完整流转")}</span><h3 className={invalidSkuCodes.has(skuDetail.sku)?"invalid-sku":""}>{skuDetail.sku}</h3><p>{skuDetail.locations.length?t("当前存放：{0}", {0: skuDetail.locations.join("、")}):t("当前无备货库存")}</p></div><div className="ledger-summary-cards"><p><b>{skuDetail.currentPallets}</b><span>{t("当前托盘")}</span></p><p><b>{skuDetail.inbound}</b><span>{t("存备货")}</span></p><p><b>{skuDetail.picked}</b><span>{t("取备货")}</span></p><p><b>{skuDetail.moved}</b><span>{t("区内迁移")}</span></p></div></div><LedgerMovementTable rows={skuDetail.events} invalidSkuCodes={invalidSkuCodes}/></>:<Empty text="请选择 SKU 查看流转明细"/>}
       </div>
     </div>}
 
     {tab==="location"&&<div className="ledger-master-detail">
       <aside className="ledger-master-list">
-        <div className="ledger-list-head"><b>库位</b><span>{locationGroups.length} 项</span></div>
-        <div className="ledger-list-scroll">{locationGroups.map(group=><button key={group.location.id} className={activeLocation===String(group.location.id)?"active":""} onClick={()=>setSelectedLocation(String(group.location.id))}>
-          <span><b>{group.location.code}</b><small>{locationTypeLabel(group.location.type)} · {group.current.length}/{group.location.capacity} 托</small></span><time>{group.last?formatLedgerTime(group.last):"暂无记录"}</time>
+        <div className="ledger-list-head"><b>{t("库位")}</b><span>{locationGroups.length} {t("项")}</span></div>
+        <div className="ledger-list-scroll">{locationGroups.map(group=><button key={group.location.id} className={activeLocation===String(group.location.id)?"active":""} onClick={()=>setSelectedLocation(String(group.location.id))} data-ui-size="">
+          <span><b>{group.location.code}</b><small>{t(locationTypeLabel(group.location.type))} · {group.current.length}/{group.location.capacity} {t("托")}</small></span><time>{group.last?formatLedgerTime(group.last):t("暂无记录")}</time>
         </button>)}{!locationGroups.length&&<Empty text="没有符合条件的库位"/>}</div>
       </aside>
       <div className="ledger-detail">
-        {locationDetail?<><div className="ledger-detail-head"><div><span>库位完整历史 · {locationTypeLabel(locationDetail.location.type)}</span><h3>{locationDetail.location.code}</h3><p>当前货物：{locationDetail.current.length?locationDetail.current.map((p,index)=><Fragment key={p.id}>{index>0?"、":""}<b className={invalidSkuCodes.has(p.sku)?"invalid-sku":""}>{p.sku}</b>（{p.id}）</Fragment>):"空库位"}</p></div><div className="ledger-summary-cards location-summary"><p><b>{locationDetail.current.length}/{locationDetail.location.capacity}</b><span>当前占用</span></p><p><b>{locationDetail.inbound}</b><span>移入记录</span></p><p><b>{locationDetail.outbound}</b><span>移出记录</span></p></div></div><LedgerMovementTable rows={locationDetail.events} location={locationDetail.location} invalidSkuCodes={invalidSkuCodes}/></>:<Empty text="请选择库位查看历史明细"/>}
+        {locationDetail?<><div className="ledger-detail-head"><div><span>{t("库位完整历史 ·")} {t(locationTypeLabel(locationDetail.location.type))}</span><h3>{locationDetail.location.code}</h3><p>{t("当前货物：")}{locationDetail.current.length?locationDetail.current.map((p,index)=><Fragment key={p.id}>{index>0?"、":""}<b className={invalidSkuCodes.has(p.sku)?"invalid-sku":""}>{p.sku}</b>（{p.id}）</Fragment>):t("空库位")}</p></div><div className="ledger-summary-cards location-summary"><p><b>{locationDetail.current.length}/{locationDetail.location.capacity}</b><span>{t("当前占用")}</span></p><p><b>{locationDetail.inbound}</b><span>{t("移入记录")}</span></p><p><b>{locationDetail.outbound}</b><span>{t("移出记录")}</span></p></div></div><LedgerMovementTable rows={locationDetail.events} location={locationDetail.location} invalidSkuCodes={invalidSkuCodes}/></>:<Empty text="请选择库位查看历史明细"/>}
       </div>
     </div>}
 
-    {tab==="history"&&<div className="ledger-history"><div className="ledger-history-head"><div><b>全部操作记录</b><span>按时间倒序，当前显示 {historyRows.length} 条</span></div></div><LedgerMovementTable rows={historyRows} invalidSkuCodes={invalidSkuCodes}/></div>}
+    {tab==="history"&&<div className="ledger-history"><div className="ledger-history-head"><div><b>{t("全部操作记录")}</b><span>{t("按时间倒序，当前显示")} {historyRows.length} {t("条")}</span></div></div><LedgerMovementTable rows={historyRows} invalidSkuCodes={invalidSkuCodes}/></div>}
   </section>;
 }
 
 function LedgerMovementTable({rows,location,invalidSkuCodes}:{rows:Movement[];location?:Location;invalidSkuCodes:Set<string>}) {
+  useLanguage();
   if(!rows.length)return <Empty text="当前条件下没有历史记录"/>;
   const orderedRows=sortMovementsNewestFirst(rows);
-  return <div className="ledger-table-scroll"><table className="ledger-table"><thead><tr><th>时间（美东）</th><th>{location?"库位变化":"动作"}</th><th>SKU</th><th>移动路径</th><th>托盘号</th><th>备注说明</th><th>任务 / 操作人</th></tr></thead><tbody>{orderedRows.map(m=>{
+  return <div className="ledger-table-scroll"><table className="ledger-table"><thead><tr><th data-ui-size="">{t("时间（美东）")}</th><th data-ui-size="">{location?t("库位变化"):t("动作")}</th><th>SKU</th><th data-ui-size="">{t("移动路径")}</th><th data-ui-size="">{t("托盘号")}</th><th data-ui-size="">{t("备注说明")}</th><th data-ui-size="">{t("任务 / 操作人")}</th></tr></thead><tbody>{orderedRows.map(m=>{
     const direction=location?locationMovementDirection(m,location):null;
-    return <tr key={m.id}><td><time>{formatLedgerTime(m.occurredAt)}</time></td><td>{direction?<><span className={`ledger-direction ${direction.tone}`}>{direction.label}</span><small className="ledger-action-note">{actionLabel[m.action]}</small></>:<span className={`ledger-action action-${m.action}`}>{actionLabel[m.action]}</span>}</td><td><b className={invalidSkuCodes.has(m.sku)?"ledger-sku invalid-sku":"ledger-sku"}>{m.sku}</b></td><td><span className="ledger-route"><b>{formatMovementLocation(m.fromLocation,m.fromLocationType,"仓外")}</b><i>→</i><b>{formatMovementLocation(m.toLocation,m.toLocationType,"出库")}</b></span></td><td><code>{m.palletId}</code></td><td><span className={m.remarks?.trim()?"ledger-remarks":"ledger-remarks empty"}>{m.remarks?.trim()||"无备注"}</span></td><td><span className="ledger-meta">{m.taskId??"直接操作"}<small>{m.operator??"系统记录"}</small></span></td></tr>;
+    return <tr key={m.id}><td><time>{formatLedgerTime(m.occurredAt)}</time></td><td>{direction?<><span className={`ledger-direction ${direction.tone}`}>{t(direction.label)}</span><small className="ledger-action-note">{t(actionLabel[m.action])}</small></>:<span className={`ledger-action action-${m.action}`}>{t(actionLabel[m.action])}</span>}</td><td><b className={invalidSkuCodes.has(m.sku)?"ledger-sku invalid-sku":"ledger-sku"}>{m.sku}</b></td><td><span className="ledger-route"><b>{formatMovementLocation(m.fromLocation,m.fromLocationType,"仓外")}</b><i>→</i><b>{formatMovementLocation(m.toLocation,m.toLocationType,"出库")}</b></span></td><td><code>{m.palletId}</code></td><td><span className={m.remarks?.trim()?"ledger-remarks":"ledger-remarks empty"}>{m.remarks?.trim()||t("无备注")}</span></td><td><span className="ledger-meta">{m.taskId??t("直接操作")}<small>{m.operator??t("系统记录")}</small></span></td></tr>;
   })}</tbody></table></div>;
 }
 
 function TasksView({tasks,onTask,invalidSkuCodes,error}:{tasks:TaskGroup[];onTask:(t:Task)=>void;invalidSkuCodes:Set<string>;error:string}) {
+  useLanguage();
   const [tab,setTab]=useState("open");
   const [selectedIds,setSelectedIds]=useState<string[]>([]);
   const [printing,setPrinting]=useState(false),[printError,setPrintError]=useState("");
@@ -911,41 +930,44 @@ function TasksView({tasks,onTask,invalidSkuCodes,error}:{tasks:TaskGroup[];onTas
   };
   return <section className="panel task-page">
     <div className="tabs task-tabs">
-      <button className={tab==="open"?"on":""} onClick={()=>setTab("open")}>待处理 <span>{pendingGroups.length}</span></button>
-      <button className={tab==="all"?"on":""} onClick={()=>setTab("all")}>全部 <span>{lines.length}</span></button>
+      <button className={tab==="open"?"on":""} onClick={()=>setTab("open")} data-ui-size="">{t("待处理")} <span>{pendingGroups.length}</span></button>
+      <button className={tab==="all"?"on":""} onClick={()=>setTab("all")} data-ui-size="">{t("全部")} <span>{lines.length}</span></button>
     </div>
-    {error&&<div className="management-error">! {error}</div>}
-    {printError&&<div className="management-error">! {printError}</div>}
-    {tab==="open"&&<div className="task-print-toolbar"><label><input type="checkbox" aria-label="全选待处理任务" checked={pendingGroups.length>0&&selectedGroups.length===pendingGroups.length} disabled={!pendingGroups.length} onChange={event=>setSelectedIds(event.target.checked?pendingGroups.map(group=>group.task.id):[])}/>全选</label><span>已选 {selectedGroups.length} 项</span><button disabled={!selectedGroups.length||printing} onClick={()=>void printSelected()}>{printing?"正在准备打印…":"打印已选任务"}</button></div>}
-    {tab==="open"?<div className="task-list">{pendingGroups.length?pendingGroups.map(group=><div className="task-selectable-row" key={group.task.id}><input type="checkbox" aria-label={`选择任务 ${group.task.id}`} checked={selectedIds.includes(group.task.id)} onChange={event=>setSelectedIds(current=>event.target.checked?[...current,group.task.id]:current.filter(id=>id!==group.task.id))}/><TaskRow task={group.task} rows={group.rows} onClick={()=>onTask(group.task)} invalidSkuCodes={invalidSkuCodes}/></div>):<Empty text="当前没有待处理任务"/>}</div>:<div className="task-lines-scroll"><div className="task-lines-table">
-      <div className="task-line-head"><span>任务 / 子任务</span><span>SKU</span><span>备货库位 / 起始库位</span><span>主库位 / 目标库位</span><span>托盘参考</span><span>作业结果</span><span>操作</span></div>
+    {error&&<div className="management-error">! {t(error)}</div>}
+    {printError&&<div className="management-error">! {t(printError)}</div>}
+    {tab==="open"&&<div className="task-print-toolbar"><label><input type="checkbox" aria-label={t("全选待处理任务")} checked={pendingGroups.length>0&&selectedGroups.length===pendingGroups.length} disabled={!pendingGroups.length} onChange={event=>setSelectedIds(event.target.checked?pendingGroups.map(group=>group.task.id):[])}/>{t("全选")}</label><span>{t("已选")} {selectedGroups.length} {t("项")}</span><button disabled={!selectedGroups.length||printing} onClick={()=>void printSelected()} data-ui-size="">{printing?t("正在准备打印…"):t("打印已选任务")}</button></div>}
+    {tab==="open"?<div className="task-list">{pendingGroups.length?pendingGroups.map(group=><div className="task-selectable-row" key={group.task.id}><input type="checkbox" aria-label={t("选择任务 {0}", {0: group.task.id})} checked={selectedIds.includes(group.task.id)} onChange={event=>setSelectedIds(current=>event.target.checked?[...current,group.task.id]:current.filter(id=>id!==group.task.id))}/><TaskRow task={group.task} rows={group.rows} onClick={()=>onTask(group.task)} invalidSkuCodes={invalidSkuCodes}/></div>):<Empty text="当前没有待处理任务"/>}</div>:<div className="task-lines-scroll"><div className="task-lines-table">
+      <div className="task-line-head"><span>{t("任务 / 子任务")}</span><span>SKU</span><span>{t("备货库位 / 起始库位")}</span><span>{t("主库位 / 目标库位")}</span><span>{t("托盘参考")}</span><span>{t("作业结果")}</span><span>{t("操作")}</span></div>
       {lines.length?lines.map(line=><TaskSubtaskRow key={`${line.task.id}-${line.task.palletId??line.index}`} task={line.task} index={line.index} total={line.total} onClick={()=>onTask(line.task)} invalidSkuCodes={invalidSkuCodes}/>):<Empty text="暂无任务明细"/>}
     </div></div>}
   </section>;
 }
 
 function TaskSubtaskRow({task,index,total,onClick,invalidSkuCodes}:{task:Task;index:number;total:number;onClick:()=>void;invalidSkuCodes:Set<string>}) {
+  useLanguage();
   const tone=task.type==="pick"?"blue":task.type==="move"?"amber":"green";
   const result=taskItemResult(task);
   return <article className="task-subtask-row">
-    <div className="task-line-identity"><span className={`type ${tone}`}>{typeLabel[task.type]}</span><b>{task.id}</b><small>子任务 {index+1} / {total}</small></div>
-    <div className="task-line-sku-block task-line-major"><span className="task-line-field-label">SKU</span><b className={task.sku&&invalidSkuCodes.has(task.sku)?"task-line-sku invalid-sku":"task-line-sku"}>{task.sku??"—"}</b>{task.itemNote&&<small>备注：{task.itemNote}</small>}</div>
-    <div className="task-line-major"><span className="task-line-field-label">备货库位 / 起始库位</span><b className="task-line-location">{formatMovementLocation(task.fromLocation,task.fromLocationType,"收货暂存区")}</b></div>
-    <div className="task-line-major"><span className="task-line-field-label">主库位 / 目标库位</span><b className="task-line-location">{formatMovementLocation(task.toLocation,task.toLocationType,"待分配")}</b></div>
-    <div className="task-line-major"><span className="task-line-field-label">托盘参考</span><code className="task-line-pallet">{task.palletId??"—"}</code></div>
-    <div className="task-line-major task-line-result-cell"><span className="task-line-field-label">作业结果</span><span className={`task-line-result ${result.key}`}>{result.label}</span></div>
-    <button className="task-line-action" onClick={onClick}>{result.key==="pending"?"处理":"详情"}</button>
+    <div className="task-line-identity"><span className={`type ${tone}`}>{t(typeLabel[task.type])}</span><b>{task.id}</b><small>{t("子任务")} {index+1} / {total}</small></div>
+    <div className="task-line-sku-block task-line-major"><span className="task-line-field-label">SKU</span><b className={task.sku&&invalidSkuCodes.has(task.sku)?"task-line-sku invalid-sku":"task-line-sku"}>{task.sku??"—"}</b>{task.itemNote&&<small>{t("备注：")}{task.itemNote}</small>}</div>
+    <div className="task-line-major"><span className="task-line-field-label">{t("备货库位 / 起始库位")}</span><b className="task-line-location">{formatMovementLocation(task.fromLocation,task.fromLocationType,"收货暂存区")}</b></div>
+    <div className="task-line-major"><span className="task-line-field-label">{t("主库位 / 目标库位")}</span><b className="task-line-location">{formatMovementLocation(task.toLocation,task.toLocationType,"待分配")}</b></div>
+    <div className="task-line-major"><span className="task-line-field-label">{t("托盘参考")}</span><code className="task-line-pallet">{task.palletId??"—"}</code></div>
+    <div className="task-line-major task-line-result-cell"><span className="task-line-field-label">{t("作业结果")}</span><span className={`task-line-result ${result.key}`}>{t(result.label)}</span></div>
+    <button className="task-line-action" onClick={onClick} data-ui-size="">{result.key==="pending"?t("处理"):t("详情")}</button>
   </article>;
 }
 
 function TaskRow({task,rows,onClick,invalidSkuCodes}:{task:Task;rows:Task[];onClick:()=>void;invalidSkuCodes:Set<string>}) {
+  useLanguage();
   const tone=task.type==="pick"?"blue":task.type==="move"?"amber":"green";
   const sourceLabel=task.type==="pick"?"备货库位":"起始库位";
   const targetLabel=task.type==="pick"?"主库位":"目标库位";
-  return <article className="task"><div className={`task-symbol ${tone}`}>{task.type==="pick"?"↗":task.type==="move"?"↔":"↓"}</div><div className="task-main"><div><span className={`type ${tone}`}>{typeLabel[task.type]}</span><strong>{task.id}</strong><small className={task.priority==="urgent"?"urgent":""}>{task.priority==="urgent"?"紧急":"普通"}</small></div>{task.type==="pick"?<ul className="task-subtask-summaries">{rows.map((row,index)=><li key={row.palletId??index}><span className="task-summary-part">SKU：<b className={row.sku&&invalidSkuCodes.has(row.sku)?"invalid-sku":""}>{row.sku??"—"}</b></span><span className="task-summary-part">备货库位：{row.fromLocation??"—"}</span><span className="task-summary-part">主库位：{row.toLocation??"—"}</span>{row.itemNote&&<small>备注：{row.itemNote}</small>}</li>)}</ul>:<><b>SKU：<span className={task.sku&&invalidSkuCodes.has(task.sku)?"invalid-sku":""}>{task.sku??task.note??"批量任务"}</span></b><p><span>{sourceLabel}：{formatMovementLocation(task.fromLocation,task.fromLocationType,"收货暂存区")}</span><em>·</em><span>{targetLabel}：{formatMovementLocation(task.toLocation,task.toLocationType,"待分配")}</span></p></>}</div><div className="task-meta"><span>{taskStatusLabel[task.status]}</span><button onClick={onClick}>{["pending","claimed"].includes(task.status)?"处理":"详情"}</button></div></article>;
+  return <article className="task"><div className={`task-symbol ${tone}`}>{task.type==="pick"?"↗":task.type==="move"?"↔":"↓"}</div><div className="task-main"><div><span className={`type ${tone}`}>{t(typeLabel[task.type])}</span><strong>{task.id}</strong><small className={task.priority==="urgent"?"urgent":""}>{task.priority==="urgent"?t("紧急"):t("普通")}</small></div>{task.type==="pick"?<ul className="task-subtask-summaries">{rows.map((row,index)=><li key={row.palletId??index}><span className="task-summary-part">SKU：<b className={row.sku&&invalidSkuCodes.has(row.sku)?"invalid-sku":""}>{row.sku??"—"}</b></span><span className="task-summary-part">{t("备货库位：")}{row.fromLocation??"—"}</span><span className="task-summary-part">{t("主库位：")}{row.toLocation??"—"}</span>{row.itemNote&&<small>{t("备注：")}{row.itemNote}</small>}</li>)}</ul>:<><b>SKU：<span className={task.sku&&invalidSkuCodes.has(task.sku)?"invalid-sku":""}>{task.sku??task.note??t("批量任务")}</span></b><p><span>{t(sourceLabel)}：{formatMovementLocation(task.fromLocation,task.fromLocationType,"收货暂存区")}</span><em>·</em><span>{t(targetLabel)}：{formatMovementLocation(task.toLocation,task.toLocationType,"待分配")}</span></p></>}</div><div className="task-meta"><span>{t(taskStatusLabel[task.status])}</span><button onClick={onClick} data-ui-size="">{["pending","claimed"].includes(task.status)?t("处理"):t("详情")}</button></div></article>;
 }
 
 function TaskCreateModal({type,pallets,locations,selected,close,done,api,locationsLoading,locationsError}:{type:"store"|"pick"|"move";pallets:Pallet[];locations:Location[];selected:string[];close:()=>void;done:(m:string)=>void;api:ApiRequest;locationsLoading:boolean;locationsError:string}) {
+  useLanguage();
   const available=pallets.filter(p=>p.status==="in_stock");
   const targets=locations.filter(location=>location.type===(type==="pick"?"pick":"reserve")&&(type==="pick"||availableLocationSlots(location)>0));
   const targetSlots=type==="pick"?targets.map(location=>location.code):targets.flatMap(location=>Array.from({length:availableLocationSlots(location)},()=>location.code));
@@ -1036,40 +1058,41 @@ function TaskCreateModal({type,pallets,locations,selected,close,done,api,locatio
     catch(e){setError(e instanceof Error?e.message:"PDF 作业单打印失败")}
     finally{setPdfBusy(false)}
   };
-  return <ModalFrame title={typeLabel[type]} kicker={type==="store"?"DIRECT PUTAWAY":type==="pick"?"BATCH PICK TASK":"BATCH MOVE TASK"} close={close} wide>
+  return <ModalFrame title={t(typeLabel[type])} kicker={type==="store"?"DIRECT PUTAWAY":type==="pick"?"BATCH PICK TASK":"BATCH MOVE TASK"} close={close} wide>
     <div className={type==="store"?"flow-summary store-flow-summary":type==="pick"?"flow-summary pick-flow-summary":"flow-summary move-flow-summary"}>
-      {locationsError&&<div className="login-error">! {locationsError}</div>}
-      {type==="store"?<><p className="store-guidance">可先添加多行再统一填写。同一库位可按托盘容量分配多行；每行的 SKU 和备货库位为必填，备注说明选填。</p><div className="store-lines"><div className="store-grid-head"><span>SKU <b>*</b></span><span>备注说明</span><span>备货库位 <b>*</b></span><span/></div>{storeRows.map((row,index)=>{const otherAssignments=storeRows.filter(item=>item.key!==row.key).map(item=>item.target);return <div className="store-line" key={row.key}><label><span>SKU *</span><input required aria-label={`SKU ${index+1}`} placeholder="必填" value={row.sku} onChange={e=>updateStore(row.key,{sku:e.target.value.toUpperCase()})}/></label><label><span>备注说明</span><input aria-label={`备注说明 ${index+1}`} placeholder="选填" value={row.remarks} onChange={e=>updateStore(row.key,{remarks:e.target.value})}/></label><label><span>备货库位 *</span><select required aria-label={`备货库位 ${index+1}`} value={row.target} onChange={e=>updateStore(row.key,{target:e.target.value})}><option value="">选择库位</option>{targets.filter(location=>location.code===row.target||targetHasRoom(location.code,otherAssignments)).map(location=><option key={location.id} value={location.code}>{location.code}（余 {availableLocationSlots(location)-otherAssignments.filter(code=>code===location.code).length}）</option>)}</select></label>{storeRows.length>1?<button className="remove-store-line" aria-label={`移除第 ${index+1} 行`} onClick={()=>setStoreRows(rows=>rows.filter(item=>item.key!==row.key))}>移除</button>:<span className="remove-store-placeholder"/>}</div>})}<button className="add-line" disabled={storeAtCapacity} onClick={addStoreRow}>＋ 添加一行</button></div>{storeAtCapacity&&<p className="store-capacity-hint">备货库位已满，无法继续添加。</p>}{storeRows.length>1&&storeMissingSku&&<p className="store-validation-hint">请填写每一行的 SKU 后再存入备货区。</p>}</>
+      {locationsError&&<div className="login-error">! {t(locationsError)}</div>}
+      {type==="store"?<><p className="store-guidance">{t("可先添加多行再统一填写。同一库位可按托盘容量分配多行；每行的 SKU 和备货库位为必填，备注说明选填。")}</p><div className="store-lines"><div className="store-grid-head"><span>SKU <b>*</b></span><span>{t("备注说明")}</span><span>{t("备货库位")} <b>*</b></span><span/></div>{storeRows.map((row,index)=>{const otherAssignments=storeRows.filter(item=>item.key!==row.key).map(item=>item.target);return <div className="store-line" key={row.key}><label><span>SKU *</span><input required aria-label={`SKU ${index+1}`} placeholder={t("必填")} value={row.sku} onChange={e=>updateStore(row.key,{sku:e.target.value.toUpperCase()})}/></label><label><span>{t("备注说明")}</span><input aria-label={t("备注说明 {0}", {0: index+1})} placeholder={t("选填")} value={row.remarks} onChange={e=>updateStore(row.key,{remarks:e.target.value})}/></label><label><span>{t("备货库位 *")}</span><select required aria-label={t("备货库位 {0}", {0: index+1})} value={row.target} onChange={e=>updateStore(row.key,{target:e.target.value})}><option value="">{t("选择库位")}</option>{targets.filter(location=>location.code===row.target||targetHasRoom(location.code,otherAssignments)).map(location=><option key={location.id} value={location.code}>{location.code}{t("（余")} {availableLocationSlots(location)-otherAssignments.filter(code=>code===location.code).length}）</option>)}</select></label>{storeRows.length>1?<button className="remove-store-line" aria-label={t("移除第 {0} 行", {0: index+1})} onClick={()=>setStoreRows(rows=>rows.filter(item=>item.key!==row.key))} data-ui-size="">{t("移除")}</button>:<span className="remove-store-placeholder"/>}</div>})}<button className="add-line" disabled={storeAtCapacity} onClick={addStoreRow} data-ui-size="">{t("＋ 添加一行")}</button></div>{storeAtCapacity&&<p className="store-capacity-hint">{t("备货库位已满，无法继续添加。")}</p>}{storeRows.length>1&&storeMissingSku&&<p className="store-validation-hint">{t("请填写每一行的 SKU 后再存入备货区。")}</p>}</>
       :type==="pick"?<>
-        <p className="pick-guidance">每行选择 SKU、备货托盘和主库位，可填写独立备注；每行将创建一个独立的取备货待办。</p>
+        <p className="pick-guidance">{t("每行选择 SKU、备货托盘和主库位，可填写独立备注；每行将创建一个独立的取备货待办。")}</p>
         <datalist id="pick-sku-options">{Array.from(new Set(available.map(p=>p.sku))).sort().map(sku=><option key={sku} value={sku}/>)}</datalist>
         <div className="pick-lines">
-          <div className="pick-grid-head"><span>SKU <b>*</b></span><span>备货库位 / 托盘 <b>*</b></span><span>主库位 <b>*</b></span><span/></div>
+          <div className="pick-grid-head"><span>SKU <b>*</b></span><span>{t("备货库位 / 托盘")} <b>*</b></span><span>{t("主库位")} <b>*</b></span><span/></div>
           {pickRows.map((row,index)=>{
             const otherSelected=pickRows.filter(item=>item.key!==row.key).map(item=>item.palletId);
             const matchingPallets=available.filter(p=>p.sku===row.sku.trim().toUpperCase()&&(p.id===row.palletId||!otherSelected.includes(p.id)));
             const targetOptionsId=`pick-target-options-${row.key}`;
             const matchingTargets=findLocationMatches(targets,row.target,100);
             return <div className="pick-line" key={row.key}>
-              <label><span>SKU *</span><input list="pick-sku-options" aria-label={`取备货 SKU ${index+1}`} placeholder="输入或选择 SKU" value={row.sku} onChange={event=>updatePick(row.key,{sku:event.target.value.toUpperCase(),palletId:""})}/></label>
-              <label><span>备货库位 / 托盘 *</span><select aria-label={`备货库位 ${index+1}`} value={row.palletId} disabled={!row.sku.trim()} onChange={e=>updatePick(row.key,{palletId:e.target.value})}><option value="">{row.sku.trim()?matchingPallets.length?"选择该 SKU 的备货库位":"该 SKU 无可用备货":"请先输入 SKU"}</option>{matchingPallets.map(p=><option key={p.id} value={p.id}>{p.location} · {p.id}{p.remarks?` · ${p.remarks}`:""}</option>)}</select></label>
-              <label><span>主库位 *</span><input list={targetOptionsId} aria-label={`主库位 ${index+1}`} placeholder="输入或选择主库位" value={row.target} onChange={event=>updatePick(row.key,{target:event.target.value.toUpperCase()})}/><datalist id={targetOptionsId}>{matchingTargets.map(location=><option key={location.id} value={location.code}/>)}</datalist></label>
-              {pickRows.length>1?<button className="remove-pick-line" aria-label={`移除第 ${index+1} 条取备货`} onClick={()=>setPickRows(rows=>rows.filter(item=>item.key!==row.key))}>移除</button>:<span className="remove-pick-placeholder"/>}
-              <label className="pick-line-note"><span>子任务备注</span><input aria-label={`取备货子任务备注 ${index+1}`} maxLength={500} placeholder="选填：填写本托作业注意事项" value={row.note} onChange={event=>updatePick(row.key,{note:event.target.value})}/></label>
+              <label><span>SKU *</span><input list="pick-sku-options" aria-label={t("取备货 SKU {0}", {0: index+1})} placeholder={t("输入或选择 SKU")} value={row.sku} onChange={event=>updatePick(row.key,{sku:event.target.value.toUpperCase(),palletId:""})}/></label>
+              <label><span>{t("备货库位 / 托盘 *")}</span><select aria-label={t("备货库位 {0}", {0: index+1})} value={row.palletId} disabled={!row.sku.trim()} onChange={e=>updatePick(row.key,{palletId:e.target.value})}><option value="">{row.sku.trim()?matchingPallets.length?t("选择该 SKU 的备货库位"):t("该 SKU 无可用备货"):t("请先输入 SKU")}</option>{matchingPallets.map(p=><option key={p.id} value={p.id}>{p.location} · {p.id}{p.remarks?` · ${p.remarks}`:""}</option>)}</select></label>
+              <label><span>{t("主库位 *")}</span><input list={targetOptionsId} aria-label={t("主库位 {0}", {0: index+1})} placeholder={t("输入或选择主库位")} value={row.target} onChange={event=>updatePick(row.key,{target:event.target.value.toUpperCase()})}/><datalist id={targetOptionsId}>{matchingTargets.map(location=><option key={location.id} value={location.code}/>)}</datalist></label>
+              {pickRows.length>1?<button className="remove-pick-line" aria-label={t("移除第 {0} 条取备货", {0: index+1})} onClick={()=>setPickRows(rows=>rows.filter(item=>item.key!==row.key))} data-ui-size="">{t("移除")}</button>:<span className="remove-pick-placeholder"/>}
+              <label className="pick-line-note"><span>{t("子任务备注")}</span><input aria-label={t("取备货子任务备注 {0}", {0: index+1})} maxLength={500} placeholder={t("选填：填写本托作业注意事项")} value={row.note} onChange={event=>updatePick(row.key,{note:event.target.value})}/></label>
             </div>;
           })}
-          <button className="add-pick-line" disabled={pickAtCapacity} onClick={addPickRow}>＋ 添加一条取备货</button>
+          <button className="add-pick-line" disabled={pickAtCapacity} onClick={addPickRow} data-ui-size="">{t("＋ 添加一条取备货")}</button>
         </div>
-        {pickAtCapacity&&available.length>0&&<p className="pick-capacity-hint">已达到当前可用备货托盘数量。</p>}
+        {pickAtCapacity&&available.length>0&&<p className="pick-capacity-hint">{t("已达到当前可用备货托盘数量。")}</p>}
       </>
-      :<><p className="pick-guidance move-guidance">每行先输入 SKU，再选择该 SKU 当前所在的备货库位和托盘，最后从仍有空托盘位的备货库位中选择迁移目标。</p><datalist id="move-sku-options">{Array.from(new Set(available.map(p=>p.sku))).sort().map(sku=><option key={sku} value={sku}/>)}</datalist><div className="pick-lines move-lines"><div className="pick-grid-head"><span>SKU <b>*</b></span><span>当前备货库位 / 托盘 <b>*</b></span><span>目标备货空位 <b>*</b></span><span/></div>{moveRows.map((row,index)=>{const otherSelected=moveRows.filter(item=>item.key!==row.key).map(item=>item.palletId);const otherTargets=moveRows.filter(item=>item.key!==row.key).map(item=>item.target);const matchingPallets=available.filter(p=>p.sku===row.sku.trim().toUpperCase()&&(p.id===row.palletId||!otherSelected.includes(p.id)));const sourcePallet=available.find(p=>p.id===row.palletId);const availableTargets=targets.filter(location=>location.code!==sourcePallet?.location&&(location.code===row.target||targetHasRoom(location.code,otherTargets)));return <div className="pick-line move-line" key={row.key}><label><span>SKU *</span><input list="move-sku-options" aria-label={`迁移备货 SKU ${index+1}`} placeholder="输入或选择 SKU" value={row.sku} onChange={e=>updateMove(row.key,{sku:e.target.value.toUpperCase(),palletId:"",target:""})}/></label><label><span>当前备货库位 / 托盘 *</span><select aria-label={`当前备货库位 ${index+1}`} value={row.palletId} disabled={!row.sku.trim()} onChange={e=>updateMove(row.key,{palletId:e.target.value,target:""})}><option value="">{row.sku.trim()?matchingPallets.length?"选择该 SKU 的当前库位":"该 SKU 无可迁移备货":"请先输入 SKU"}</option>{matchingPallets.map(p=><option key={p.id} value={p.id}>{p.location} · {p.id}{p.remarks?` · ${p.remarks}`:""}</option>)}</select></label><label><span>目标备货空位 *</span><select aria-label={`目标备货空位 ${index+1}`} value={row.target} disabled={!row.palletId} onChange={e=>updateMove(row.key,{target:e.target.value})}><option value="">{row.palletId?availableTargets.length?"选择有空位的备货库位":"暂无可用备货空位":"请先选择当前库位"}</option>{availableTargets.map(location=>{const remaining=availableLocationSlots(location)-otherTargets.filter(code=>code===location.code).length;return <option key={location.id} value={location.code}>{location.code}（空位 {remaining}）</option>})}</select></label>{moveRows.length>1?<button className="remove-pick-line" aria-label={`移除第 ${index+1} 条迁移备货`} onClick={()=>setMoveRows(rows=>rows.filter(item=>item.key!==row.key))}>移除</button>:<span className="remove-pick-placeholder"/>}</div>})}<button className="add-pick-line move-add-line" disabled={moveAtCapacity} onClick={addMoveRow}>＋ 添加一条迁移备货</button></div>{moveAtCapacity&&targetSlots.length>0&&<p className="pick-capacity-hint">已达到当前备货区空托盘位数量。</p>}</>}
-      {!locationsLoading&&!locationsError&&!targets.length&&<div className="login-error">! 当前没有可分配的目标库位</div>}{error&&<div className="login-error">! {error}</div>}
+      :<><p className="pick-guidance move-guidance">{t("每行先输入 SKU，再选择该 SKU 当前所在的备货库位和托盘，最后从仍有空托盘位的备货库位中选择迁移目标。")}</p><datalist id="move-sku-options">{Array.from(new Set(available.map(p=>p.sku))).sort().map(sku=><option key={sku} value={sku}/>)}</datalist><div className="pick-lines move-lines"><div className="pick-grid-head"><span>SKU <b>*</b></span><span>{t("当前备货库位 / 托盘")} <b>*</b></span><span>{t("目标备货空位")} <b>*</b></span><span/></div>{moveRows.map((row,index)=>{const otherSelected=moveRows.filter(item=>item.key!==row.key).map(item=>item.palletId);const otherTargets=moveRows.filter(item=>item.key!==row.key).map(item=>item.target);const matchingPallets=available.filter(p=>p.sku===row.sku.trim().toUpperCase()&&(p.id===row.palletId||!otherSelected.includes(p.id)));const sourcePallet=available.find(p=>p.id===row.palletId);const availableTargets=targets.filter(location=>location.code!==sourcePallet?.location&&(location.code===row.target||targetHasRoom(location.code,otherTargets)));return <div className="pick-line move-line" key={row.key}><label><span>SKU *</span><input list="move-sku-options" aria-label={t("迁移备货 SKU {0}", {0: index+1})} placeholder={t("输入或选择 SKU")} value={row.sku} onChange={e=>updateMove(row.key,{sku:e.target.value.toUpperCase(),palletId:"",target:""})}/></label><label><span>{t("当前备货库位 / 托盘 *")}</span><select aria-label={t("当前备货库位 {0}", {0: index+1})} value={row.palletId} disabled={!row.sku.trim()} onChange={e=>updateMove(row.key,{palletId:e.target.value,target:""})}><option value="">{row.sku.trim()?matchingPallets.length?t("选择该 SKU 的当前库位"):t("该 SKU 无可迁移备货"):t("请先输入 SKU")}</option>{matchingPallets.map(p=><option key={p.id} value={p.id}>{p.location} · {p.id}{p.remarks?` · ${p.remarks}`:""}</option>)}</select></label><label><span>{t("目标备货空位 *")}</span><select aria-label={t("目标备货空位 {0}", {0: index+1})} value={row.target} disabled={!row.palletId} onChange={e=>updateMove(row.key,{target:e.target.value})}><option value="">{row.palletId?availableTargets.length?t("选择有空位的备货库位"):t("暂无可用备货空位"):t("请先选择当前库位")}</option>{availableTargets.map(location=>{const remaining=availableLocationSlots(location)-otherTargets.filter(code=>code===location.code).length;return <option key={location.id} value={location.code}>{location.code}{t("（空位")} {remaining}）</option>})}</select></label>{moveRows.length>1?<button className="remove-pick-line" aria-label={t("移除第 {0} 条迁移备货", {0: index+1})} onClick={()=>setMoveRows(rows=>rows.filter(item=>item.key!==row.key))} data-ui-size="">{t("移除")}</button>:<span className="remove-pick-placeholder"/>}</div>})}<button className="add-pick-line move-add-line" disabled={moveAtCapacity} onClick={addMoveRow} data-ui-size="">{t("＋ 添加一条迁移备货")}</button></div>{moveAtCapacity&&targetSlots.length>0&&<p className="pick-capacity-hint">{t("已达到当前备货区空托盘位数量。")}</p>}</>}
+      {!locationsLoading&&!locationsError&&!targets.length&&<div className="login-error">{t("! 当前没有可分配的目标库位")}</div>}{error&&<div className="login-error">! {t(error)}</div>}
     </div>
-    <div className="modal-actions">{type==="pick"&&<button className="pick-pdf-action" disabled={busy||pdfBusy||locationsLoading||pickInvalid} onClick={printPickSheet}>▤ {pdfBusy?"正在准备打印…":"打印PDF作业单"}</button>}{type==="move"&&<button className="pick-pdf-action" disabled={busy||pdfBusy||moveInvalid} onClick={printMoveSheet}>▤ {pdfBusy?"正在准备打印…":"打印PDF作业单"}</button>}<button onClick={close}>取消</button><button className="primary" disabled={busy||pdfBusy||locationsLoading||!targets.length||(type==="store"?storeInvalid:type==="move"?moveInvalid:pickInvalid)} onClick={submit}>{busy?(type==="store"?"正在存入…":"正在创建…"):(type==="store"?"存入备货区":"创建待办")}</button></div>
+    <div className="modal-actions">{type==="pick"&&<button className="pick-pdf-action" disabled={busy||pdfBusy||locationsLoading||pickInvalid} onClick={printPickSheet} data-ui-size="">▤ {pdfBusy?t("正在准备打印…"):t("打印PDF作业单")}</button>}{type==="move"&&<button className="pick-pdf-action" disabled={busy||pdfBusy||moveInvalid} onClick={printMoveSheet} data-ui-size="">▤ {pdfBusy?t("正在准备打印…"):t("打印PDF作业单")}</button>}<button onClick={close} data-ui-size="">{t("取消")}</button><button className="primary" disabled={busy||pdfBusy||locationsLoading||!targets.length||(type==="store"?storeInvalid:type==="move"?moveInvalid:pickInvalid)} onClick={submit} data-ui-size="">{busy?(type==="store"?t("正在存入…"):t("正在创建…")):(type==="store"?t("存入备货区"):t("创建待办"))}</button></div>
   </ModalFrame>;
 }
 
 function TaskModal({task,rows,close,api,done,updated,invalidSkuCodes}:{task:Task;rows:Task[];close:()=>void;api:ApiRequest;done:(m:string)=>void;updated:(m:string)=>Promise<void>;invalidSkuCodes:Set<string>}) {
+  useLanguage();
   const [busy,setBusy]=useState(false),[busyPallet,setBusyPallet]=useState<string|null>(null),[pdfBusy,setPdfBusy]=useState(false),[error,setError]=useState("");
   const open=["pending","claimed"].includes(task.status);
   const finish=async(outcome:"completed"|"returned")=>{setBusy(true);setError("");try{await api(`/api/v1/tasks/${task.id}/complete`,{method:"POST",body:JSON.stringify({outcome})});done(outcome==="completed"?"任务已完成，库存与历史已更新":"货物已退回原备货库位")}catch(e){setError(e instanceof Error?e.message:"操作失败");setBusy(false)}};
@@ -1088,37 +1111,38 @@ function TaskModal({task,rows,close,api,done,updated,invalidSkuCodes}:{task:Task
     catch(e){setError(e instanceof Error?e.message:"PDF 作业单打印失败")}
     finally{setPdfBusy(false)}
   };
-  return <ModalFrame title={`${typeLabel[task.type]} · ${task.id}`} kicker={`TASK / ${taskStatusLabel[task.status]}`} close={close} wide={task.type==="pick"}><div className="task-detail">
+  return <ModalFrame title={`${t(typeLabel[task.type])} · ${task.id}`} kicker={`TASK / ${t(taskStatusLabel[task.status])}`} close={close} wide={task.type==="pick"}><div className="task-detail">
     {task.type==="pick"?<div className="pick-task-items">{rows.map((row,index)=>{
       const outcome=pickItemOutcome(row);
       const itemBusy=busyPallet===row.palletId;
       return <article className={`pick-task-item${outcome?" resolved":""}`} key={row.palletId??index}>
-        <div className="pick-task-item-head"><b>第 {index+1} 托</b>{outcome&&<span className={`pick-item-status ${outcome}`}>{outcome==="completed"?"已全部取出":outcome==="returned"?"已退回库位":"已部分取出"}</span>}</div>
+        <div className="pick-task-item-head"><b>{t("第")} {index+1} {t("托")}</b>{outcome&&<span className={`pick-item-status ${outcome}`}>{outcome==="completed"?t("已全部取出"):outcome==="returned"?t("已退回库位"):t("已部分取出")}</span>}</div>
         <dl className="pick-task-route">
           <div className="pick-task-sku"><dt>SKU</dt><dd className={row.sku&&invalidSkuCodes.has(row.sku)?"invalid-sku":""}>{row.sku??"—"}</dd></div>
-          <div><dt>备货库位</dt><dd>{row.fromLocation??"—"}</dd></div>
-          <div><dt>主库位</dt><dd>{row.toLocation??"—"}</dd></div>
+          <div><dt data-ui-size="">{t("备货库位")}</dt><dd>{row.fromLocation??"—"}</dd></div>
+          <div><dt data-ui-size="">{t("主库位")}</dt><dd>{row.toLocation??"—"}</dd></div>
         </dl>
-        {row.palletId&&<small className="pick-pallet-reference">托盘号：{row.palletId}</small>}
-        {row.palletRemarks&&<small className="pick-pallet-remarks">备注说明：{row.palletRemarks}</small>}
-        {row.itemNote&&<small className="pick-task-note">子任务备注：{row.itemNote}</small>}
-        <p className="pick-subtask-summary"><span>SKU：<b className={row.sku&&invalidSkuCodes.has(row.sku)?"invalid-sku":""}>{row.sku??"—"}</b></span><span>备货库位：{row.fromLocation??"—"}</span><span>主库位：{row.toLocation??"—"}</span></p>
+        {row.palletId&&<small className="pick-pallet-reference">{t("托盘号：")}{row.palletId}</small>}
+        {row.palletRemarks&&<small className="pick-pallet-remarks">{t("备注说明：")}{row.palletRemarks}</small>}
+        {row.itemNote&&<small className="pick-task-note">{t("子任务备注：")}{row.itemNote}</small>}
+        <p className="pick-subtask-summary"><span>SKU：<b className={row.sku&&invalidSkuCodes.has(row.sku)?"invalid-sku":""}>{row.sku??"—"}</b></span><span>{t("备货库位：")}{row.fromLocation??"—"}</span><span>{t("主库位：")}{row.toLocation??"—"}</span></p>
         {open&&!outcome&&row.palletId&&<div className="pick-item-actions">
-          <button className="pick-complete" disabled={Boolean(busyPallet)||pdfBusy} onClick={()=>finishPickItem(row,"completed")}>{itemBusy?"处理中…":"全部取出"}</button>
-          <button className="pick-partial" disabled={Boolean(busyPallet)||pdfBusy} onClick={()=>finishPickItem(row,"partial")}>部分取出</button>
-          <button className="pick-return" disabled={Boolean(busyPallet)||pdfBusy} onClick={()=>finishPickItem(row,"returned")}>退回库位</button>
+          <button className="pick-complete" disabled={Boolean(busyPallet)||pdfBusy} onClick={()=>finishPickItem(row,"completed")} data-ui-size="">{itemBusy?t("处理中…"):t("全部取出")}</button>
+          <button className="pick-partial" disabled={Boolean(busyPallet)||pdfBusy} onClick={()=>finishPickItem(row,"partial")} data-ui-size="">{t("部分取出")}</button>
+          <button className="pick-return" disabled={Boolean(busyPallet)||pdfBusy} onClick={()=>finishPickItem(row,"returned")} data-ui-size="">{t("退回库位")}</button>
         </div>}
       </article>;
     })}</div>:<>
-      <div className="task-item-list">{rows.map((row,index)=><div className="task-item-detail" key={row.palletId??index}><p><b>SKU：<span className={row.sku&&invalidSkuCodes.has(row.sku)?"invalid-sku":""}>{row.sku??"新托盘"}</span></b><small>起始库位：{formatMovementLocation(row.fromLocation,row.fromLocationType,"收货暂存区")} · 目标库位：{formatMovementLocation(row.toLocation,row.toLocationType,"待分配")}</small>{row.palletId&&<em>托盘参考：{row.palletId}</em>}{row.palletRemarks&&<small>备注说明：{row.palletRemarks}</small>}</p></div>)}</div>
-      {open&&<div className="result-options"><button disabled={busy||pdfBusy} onClick={()=>finish("completed")}>全部完成</button><button disabled={busy||pdfBusy} onClick={()=>finish("returned")}>退回备货位</button></div>}
+      <div className="task-item-list">{rows.map((row,index)=><div className="task-item-detail" key={row.palletId??index}><p><b>SKU：<span className={row.sku&&invalidSkuCodes.has(row.sku)?"invalid-sku":""}>{row.sku??t("新托盘")}</span></b><small>{t("起始库位：")}{formatMovementLocation(row.fromLocation,row.fromLocationType,"收货暂存区")} {t("· 目标库位：")}{formatMovementLocation(row.toLocation,row.toLocationType,"待分配")}</small>{row.palletId&&<em>{t("托盘参考：")}{row.palletId}</em>}{row.palletRemarks&&<small>{t("备注说明：")}{row.palletRemarks}</small>}</p></div>)}</div>
+      {open&&<div className="result-options"><button disabled={busy||pdfBusy} onClick={()=>finish("completed")} data-ui-size="">{t("全部完成")}</button><button disabled={busy||pdfBusy} onClick={()=>finish("returned")} data-ui-size="">{t("退回备货位")}</button></div>}
     </>}
-    {error&&<div className="login-error">! {error}</div>}
-    <button className="pdf" disabled={busy||Boolean(busyPallet)||pdfBusy} onClick={printPdf}>▤ {pdfBusy?"正在准备打印…":"打印PDF作业单"}</button>
+    {error&&<div className="login-error">! {t(error)}</div>}
+    <button className="pdf" disabled={busy||Boolean(busyPallet)||pdfBusy} onClick={printPdf} data-ui-size="">▤ {pdfBusy?t("正在准备打印…"):t("打印PDF作业单")}</button>
   </div></ModalFrame>;
 }
 
 function AccountsModal({users,currentUserId,close,api,done}:{users:User[];currentUserId:number;close:()=>void;api:ApiRequest;done:(m:string)=>void|Promise<void>}) {
+  useLanguage();
   const [adding,setAdding]=useState(false);
   const [username,setUsername]=useState("");
   const [password,setPassword]=useState("");
@@ -1161,26 +1185,29 @@ function AccountsModal({users,currentUserId,close,api,done}:{users:User[];curren
   };
   if(editing) {
     const admin=editing.role==="admin";
-    return <ModalFrame title={`权限设置 · ${editing.name}`} kicker="PAGE ACCESS" close={()=>setEditing(null)} wide><div className="permission-editor"><p>{admin?"系统管理员始终拥有全部页面权限，无法取消。":"仅勾选的页面会显示在对应主导航或“备货数据”页签中。"}</p><PermissionChecklist permissions={admin?ALL_PAGE_KEYS:editingPermissions} setPermissions={setEditingPermissions} disabled={admin}/>{error&&<div className="login-error">! {error}</div>}</div><div className="modal-actions"><button onClick={()=>setEditing(null)}>{admin?"关闭":"取消"}</button>{!admin&&<button className="primary" disabled={!editingPermissions.length} onClick={savePermissions}>保存权限</button>}</div></ModalFrame>;
+    return <ModalFrame title={t("权限设置 · {0}", {0: editing.name})} kicker="PAGE ACCESS" close={()=>setEditing(null)} wide><div className="permission-editor"><p>{admin?t("系统管理员始终拥有全部页面权限，无法取消。"):t("仅勾选的页面会显示在对应主导航或“备货数据”页签中。")}</p><PermissionChecklist permissions={admin?ALL_PAGE_KEYS:editingPermissions} setPermissions={setEditingPermissions} disabled={admin}/>{error&&<div className="login-error">! {t(error)}</div>}</div><div className="modal-actions"><button onClick={()=>setEditing(null)} data-ui-size="">{admin?t("关闭"):t("取消")}</button>{!admin&&<button className="primary" disabled={!editingPermissions.length} onClick={savePermissions} data-ui-size="">{t("保存权限")}</button>}</div></ModalFrame>;
   }
   if(deleting) {
-    return <ModalFrame title={`删除账号 · ${deleting.name}`} kicker="CONFIRM DELETE" close={()=>{if(!deleteBusy){setDeleting(null);setError("")}}}><div className="account-delete-confirm"><strong>确定删除账号“{deleting.username}”吗？</strong><p>该账号将立即无法登录，所有已登录会话也会失效。仓库操作历史会保留原操作人信息。</p>{error&&<div className="login-error">! {error}</div>}</div><div className="modal-actions"><button disabled={deleteBusy} onClick={()=>{setDeleting(null);setError("")}}>取消</button><button className="account-delete-confirm-button" disabled={deleteBusy} onClick={remove}>{deleteBusy?"正在删除…":"确认删除"}</button></div></ModalFrame>;
+    return <ModalFrame title={t("删除账号 · {0}", {0: deleting.name})} kicker="CONFIRM DELETE" close={()=>{if(!deleteBusy){setDeleting(null);setError("")}}}><div className="account-delete-confirm"><strong>{t("确定删除账号“")}{deleting.username}{t("”吗？")}</strong><p>{t("该账号将立即无法登录，所有已登录会话也会失效。仓库操作历史会保留原操作人信息。")}</p>{error&&<div className="login-error">! {t(error)}</div>}</div><div className="modal-actions"><button disabled={deleteBusy} onClick={()=>{setDeleting(null);setError("")}} data-ui-size="">{t("取消")}</button><button className="account-delete-confirm-button" disabled={deleteBusy} onClick={remove} data-ui-size="">{deleteBusy?t("正在删除…"):t("确认删除")}</button></div></ModalFrame>;
   }
-  return <ModalFrame title="账户管理" kicker="ADMIN ONLY" close={close} wide><div className="account-list"><p>管理员默认拥有全部权限。普通账号只会看到被授权的子页面；新增页面默认不授权，已删除页面的旧权限自动失效。</p>{users.map(u=>{
+  return <ModalFrame title={t("账户管理")} kicker="ADMIN ONLY" close={close} wide><div className="account-list"><p>{t("管理员默认拥有全部权限。普通账号只会看到被授权的子页面；新增页面默认不授权，已删除页面的旧权限自动失效。")}</p>{users.map(u=>{
     const permissions=effectivePagePermissions(u.role,u.pagePermissions);
-    return <div key={u.id} className={`account-row${!u.active?" disabled-user":""}`}><span>{u.name[0]}</span><div className="account-identity"><b>{u.name}</b><small>{u.username} · {u.email}</small></div>{u.role==="admin"&&<em>管理员</em>}<div className="account-actions"><button className="account-permission-button" onClick={()=>openPermissions(u)}><b>{u.role==="admin"?"全部权限":`已授权 ${permissions.length}/${PAGE_DEFINITIONS.length}`}</b><small>点击管理</small></button><button className="account-state-button" onClick={()=>toggle(u)}>{u.active?"停用":"启用"}</button>{u.id!==currentUserId&&<button className="account-delete-button" onClick={()=>{setError("");setDeleting(u)}}>删除</button>}</div></div>;
-  })}{!adding?<button className="add-account" onClick={()=>{setAdding(true);setError("")}}>＋ 新增内部账号</button>:<form className="account-form account-create-form" onSubmit={create}><label>账号名称<input required value={username} onChange={e=>setUsername(e.target.value.toLowerCase())}/></label><label>初始密码<input required type="password" autoComplete="new-password" minLength={12} value={password} onChange={e=>setPassword(e.target.value)}/></label><fieldset className="permission-scope"><legend><span>权限范围</span><button type="button" onClick={()=>setNewPermissions(newPermissions.length===ALL_PAGE_KEYS.length?[]:[...ALL_PAGE_KEYS])}>{newPermissions.length===ALL_PAGE_KEYS.length?"取消全选":"全选"}</button></legend><PermissionChecklist permissions={newPermissions} setPermissions={setNewPermissions}/></fieldset>{error&&<div className="login-error">! {error}</div>}<div><button type="button" onClick={()=>{setAdding(false);setError("")}}>取消</button><button className="primary" disabled={!newPermissions.length}>创建账号</button></div></form>}</div></ModalFrame>;
+    return <div key={u.id} className={`account-row${!u.active?" disabled-user":""}`}><span>{u.name[0]}</span><div className="account-identity"><b>{u.name}</b><small>{u.username} · {u.email}</small></div>{u.role==="admin"&&<em>{t("管理员")}</em>}<div className="account-actions"><button className="account-permission-button" onClick={()=>openPermissions(u)} data-ui-size=""><b>{u.role==="admin"?t("全部权限"):t("已授权 {0}/{1}", {0: permissions.length, 1: PAGE_DEFINITIONS.length})}</b><small>{t("点击管理")}</small></button><button className="account-state-button" onClick={()=>toggle(u)} data-ui-size="">{u.active?t("停用"):t("启用")}</button>{u.id!==currentUserId&&<button className="account-delete-button" onClick={()=>{setError("");setDeleting(u)}} data-ui-size="">{t("删除")}</button>}</div></div>;
+  })}{!adding?<button className="add-account" onClick={()=>{setAdding(true);setError("")}} data-ui-size="">{t("＋ 新增内部账号")}</button>:<form className="account-form account-create-form" onSubmit={create}><label>{t("账号名称")}<input required value={username} onChange={e=>setUsername(e.target.value.toLowerCase())}/></label><label>{t("初始密码")}<input required type="password" autoComplete="new-password" minLength={12} value={password} onChange={e=>setPassword(e.target.value)}/></label><fieldset className="permission-scope"><legend><span>{t("权限范围")}</span><button type="button" onClick={()=>setNewPermissions(newPermissions.length===ALL_PAGE_KEYS.length?[]:[...ALL_PAGE_KEYS])} data-ui-size="">{newPermissions.length===ALL_PAGE_KEYS.length?t("取消全选"):t("全选")}</button></legend><PermissionChecklist permissions={newPermissions} setPermissions={setNewPermissions}/></fieldset>{error&&<div className="login-error">! {t(error)}</div>}<div><button type="button" onClick={()=>{setAdding(false);setError("")}} data-ui-size="">{t("取消")}</button><button className="primary" disabled={!newPermissions.length} data-ui-size="">{t("创建账号")}</button></div></form>}</div></ModalFrame>;
 }
 
 function PermissionChecklist({permissions,setPermissions,disabled=false}:{permissions:readonly PageKey[];setPermissions:(permissions:PageKey[])=>void;disabled?:boolean}) {
+  useLanguage();
   const selected=new Set(permissions);
-  return <div className="permission-list" role="group" aria-label="子页面权限">{PAGE_DEFINITIONS.map(page=><label key={page.key}><span className="permission-page"><i>{page.icon}</i><span><b>{page.label}</b>{page.section==="warehouse-data"&&<small>备货数据页签</small>}{page.section==="timekeeping"&&<small>工时体系页面</small>}</span></span><input type="checkbox" checked={selected.has(page.key)} disabled={disabled} onChange={event=>setPermissions(event.target.checked?ALL_PAGE_KEYS.filter(key=>selected.has(key)||key===page.key):permissions.filter(key=>key!==page.key))}/></label>)}</div>;
+  return <div className="permission-list" role="group" aria-label={t("子页面权限")}>{PAGE_DEFINITIONS.map(page=><label key={page.key}><span className="permission-page"><i>{page.icon}</i><span><b>{t(page.label)}</b>{page.section==="warehouse-data"&&<small>{t("备货数据页签")}</small>}{page.section==="timekeeping"&&<small>{t("工时体系页面")}</small>}</span></span><input type="checkbox" checked={selected.has(page.key)} disabled={disabled} onChange={event=>setPermissions(event.target.checked?ALL_PAGE_KEYS.filter(key=>selected.has(key)||key===page.key):permissions.filter(key=>key!==page.key))}/></label>)}</div>;
 }
 
 function ModalFrame({title,kicker,close,children,wide=false}:{title:string;kicker:string;close:()=>void;children:React.ReactNode;wide?:boolean}) {
-  return <div className="modal-backdrop" onMouseDown={e=>e.currentTarget===e.target&&close()}><div className={wide?"modal-card modal-card-wide":"modal-card"}><div className="modal-head"><div><span className="modal-kicker">{kicker}</span><h3>{title}</h3></div><button aria-label="关闭" onClick={close}>×</button></div>{children}</div></div>;
+  useLanguage();
+  return <div className="modal-backdrop" onMouseDown={e=>e.currentTarget===e.target&&close()}><div className={wide?"modal-card modal-card-wide":"modal-card"}><div className="modal-head"><div><span className="modal-kicker">{t(kicker)}</span><h3 data-ui-size="">{t(title)}</h3></div><button aria-label={t("关闭")} onClick={close}>×</button></div>{children}</div></div>;
 }
-function Empty({text}:{text:string}){return <div className="empty-state"><span>□</span><p>{text}</p></div>}
+function Empty({text}:{text:string}){
+  useLanguage();return <div className="empty-state"><span>□</span><p>{t(text)}</p></div>}
 function taskItemResult(task:Task):{key:"pending"|"completed"|"partial"|"returned"|"cancelled";label:string} {
   const outcome=task.itemOutcome??(["pending","claimed"].includes(task.status)?null:task.status);
   if(outcome==="completed") return {key:"completed",label:task.type==="pick"?"全部取出":task.type==="move"?"迁移完成":"存入完成"};
