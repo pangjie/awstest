@@ -1,14 +1,15 @@
 "use client";
+import { t, useLanguage, taskText } from "@/app/ui-language";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
-import { createPortal } from "react-dom";
 import { fetchWithTimeout } from "@/lib/client-fetch";
 import { downloadWorkbook } from "@/lib/excel-workbook";
 import { parseWaveText, type ParsedWave } from "@/lib/timekeeping/waves";
 import { timeApi } from "./api";
 import { formatClockWithSeconds, formatDurationWithSeconds, stateLabel } from "./format";
-import type { DashboardFilterKey, DashboardFilters, DashboardResponse, DashboardSortKey, DashboardSortState, WorkItem, WorkParticipant } from "./types";
+import type { DashboardFilterKey, DashboardFilters, DashboardResponse, DashboardSortKey, DashboardSortState, WorkItem } from "./types";
+import { LeadSummary } from "./wave-participants";
 import { channelLabel, WaveChannelTag, WaveTypeTag, waveTypeInfo } from "./wave-display";
 
 type WaveState="completed"|"interrupted"|"working"|"unstarted"|"paused";
@@ -22,6 +23,7 @@ const WAVE_EXPORT_HEADERS=["渠道","类型","波次号","状态","SKU","订单"
 const WAVE_EXPORT_WIDTHS=[12,9,22,10,8,8,8,15,28,24,24,14,12,10];
 
 export default function DashboardPage({date,exportStartDate,exportEndDate,filters,setFilters,sortState,setSortState,exportKey,importOpen,closeImport,openScan}:{date:string;exportStartDate:string;exportEndDate:string;filters:DashboardFilters;setFilters:Dispatch<SetStateAction<DashboardFilters>>;sortState:DashboardSortState;setSortState:Dispatch<SetStateAction<DashboardSortState>>;exportKey:number;importOpen:boolean;closeImport:()=>void;openScan?:((badge:string)=>void)}){
+  useLanguage();
   const [data,setData]=useState<DashboardResponse|null>(null);
   const [now,setNow]=useState(()=>Date.now());
   const [openFilter,setOpenFilter]=useState<DashboardFilterKey|null>(null);
@@ -149,7 +151,7 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
   },[exportDashboard,exportKey]);
 
   const mutate=async(item:WorkItem,action:"complete"|"interrupt"|"delete")=>{
-    const prompt=action==="complete"?`确定完结波次 ${item.waveNo}？所有进行中的该波次计时会结束。`:action==="interrupt"?`确定中断波次 ${item.waveNo}？正在计时的参与人员将转为在岗待命。`:`确定移除未开始的波次 ${item.waveNo}？`;
+    const prompt=action==="complete"?t("确定完结波次 {0}？所有进行中的该波次计时会结束。",{0:item.waveNo}):action==="interrupt"?t("确定中断波次 {0}？正在计时的参与人员将转为在岗待命。",{0:item.waveNo}):t("确定移除未开始的波次 {0}？",{0:item.waveNo});
     if(!window.confirm(prompt))return;
     setPendingWaveId(item.id);setError("");
     try{
@@ -163,12 +165,12 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
   };
 
   if(!data&&!error)return <div className="time-page time-page-placeholder" aria-busy="true"/>;
-  if(!data)return <div className="time-page"><div className="time-error">{error}<button onClick={()=>void load(date)}>重试</button></div></div>;
+  if(!data)return <div className="time-page"><div className="time-error">{t(error)}<button onClick={()=>void load(date)} data-ui-size="">{t("重试")}</button></div></div>;
 
   return <div className="time-page time-dashboard-page">
-    {error&&<div className="time-inline-warning">{error}</div>}
+    {error&&<div className="time-inline-warning">{t(error)}</div>}
     <div className="time-dashboard-main-grid">
-      <aside className="time-dashboard-stat-column" aria-label="现场统计">
+      <aside className="time-dashboard-stat-column" aria-label={t("现场统计")}>
         <div className="time-dashboard-metrics">
           <WaveStatusMetric total={waveKpis.total} unstarted={waveKpis.unstarted} current={waveKpis.current} completed={waveKpis.completed}/>
           <CompletionMetric orders={completionKpis.orders} pieces={completionKpis.pieces} multipleOrders={completionKpis.multipleOrders} mixedOrders={completionKpis.mixedOrders}/>
@@ -181,12 +183,12 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
       </aside>
 
       <section className="time-card time-wave-board">
-      <div className="time-card-title time-dashboard-wave-title"><div><h3>工作汇总</h3><p>当前波次及 {data.range.label} 参与过的波次</p></div><div className="time-dashboard-wave-actions"><button type="button" className="time-dashboard-filter-export" disabled={!visibleProjects.length} onClick={()=>void exportFilteredWaves()}>导出筛选结果</button><div className="time-dashboard-filters">
+      <div className="time-card-title time-dashboard-wave-title"><div><h3 data-ui-size="">{t("工作汇总")}</h3><p>{t("当前波次及")} {data.range.label} {t("参与过的波次")}</p></div><div className="time-dashboard-wave-actions"><button type="button" className="time-dashboard-filter-export" disabled={!visibleProjects.length} onClick={()=>void exportFilteredWaves()} data-ui-size="">{t("导出筛选结果")}</button><div className="time-dashboard-filters">
         {(["channel","type","state","employee"] as const).map(key=><MultiSelectFilter key={key} label={{channel:"渠道",type:"类型",state:"状态",employee:"员工"}[key]} options={filterOptions[key]} excluded={filters[key]} open={openFilter===key} setOpen={open=>setOpenFilter(open?key:null)} setExcluded={excluded=>setFilters(current=>({...current,[key]:excluded}))}/>) }
-        <button type="button" className="time-dashboard-filter-reset" disabled={!filtersActive&&sortState.key==="default"} onClick={resetView}>重置</button>
+        <button type="button" className="time-dashboard-filter-reset" disabled={!filtersActive&&sortState.key==="default"} onClick={resetView} data-ui-size="">{t("重置")}</button>
       </div></div></div>
-      <div className="time-table-wrap"><table className="time-table time-data-table time-dashboard-wave-table"><colgroup><col className="time-wave-channel-col"/><col className="time-wave-type-col"/><col className="time-wave-number-col"/><col className="time-wave-state-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-lead-col"/><col className="time-wave-start-col"/><col className="time-wave-completed-col"/><col className="time-wave-duration-col"/><col className="time-wave-rate-col"/><col className="time-wave-action-col"/></colgroup><thead><tr><th>渠道</th><th>类型</th><th>波次号</th><th>状态</th><th>SKU</th><th>订单</th><th>件数</th><th>负责人</th><th>开始时间</th><th>完结时间</th><WaveSortHead label="波次工时" field="duration" current={sortState} onClick={changeSort}/><WaveSortHead label="时效" field="efficiency" current={sortState} onClick={changeSort}/><th>操作</th></tr></thead><tbody>{orderedProjects.map(item=><WaveRow item={item} key={item.id} pending={pendingWaveId===item.id} complete={()=>void mutate(item,"complete")} interrupt={()=>void mutate(item,"interrupt")} remove={()=>void mutate(item,"delete")} openScan={openScan}/>)}</tbody></table></div>
-      {visibleProjects.length===0&&<p className="time-empty">当前筛选下暂无波次</p>}
+      <div className="time-table-wrap"><table className="time-table time-data-table time-dashboard-wave-table"><colgroup><col className="time-wave-channel-col"/><col className="time-wave-type-col"/><col className="time-wave-number-col"/><col className="time-wave-state-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-count-col"/><col className="time-wave-lead-col"/><col className="time-wave-start-col"/><col className="time-wave-completed-col"/><col className="time-wave-duration-col"/><col className="time-wave-rate-col"/><col className="time-wave-action-col"/></colgroup><thead><tr><th data-ui-size="">{t("渠道")}</th><th data-ui-size="">{t("类型")}</th><th data-ui-size="">{t("波次号")}</th><th data-ui-size="">{t("状态")}</th><th>SKU</th><th data-ui-size="">{t("订单")}</th><th data-ui-size="">{t("件数")}</th><th data-ui-size="">{t("负责人")}</th><th data-ui-size="">{t("开始时间")}</th><th data-ui-size="">{t("完结时间")}</th><WaveSortHead label="波次工时" field="duration" current={sortState} onClick={changeSort}/><WaveSortHead label="时效" field="efficiency" current={sortState} onClick={changeSort}/><th data-ui-size="">{t("操作")}</th></tr></thead><tbody>{orderedProjects.map(item=><WaveRow item={item} key={item.id} pending={pendingWaveId===item.id} complete={()=>void mutate(item,"complete")} interrupt={()=>void mutate(item,"interrupt")} remove={()=>void mutate(item,"delete")} openScan={openScan}/>)}</tbody></table></div>
+      {visibleProjects.length===0&&<p className="time-empty">{t("当前筛选下暂无波次")}</p>}
       </section>
     </div>
 
@@ -194,23 +196,29 @@ export default function DashboardPage({date,exportStartDate,exportEndDate,filter
   </div>;
 }
 
-function Metric({label,value,note,timer=false}:{label:string;value:string|number;note?:string;timer?:boolean}){return <article className={`time-metric${note?"":" time-metric-no-note"}`}><span>{label}</span><b>{timer?<RollingClock value={String(value)}/>:value}</b>{note&&<small>{note}</small>}</article>}
+function Metric({label,value,note,timer=false}:{label:string;value:string|number;note?:string;timer?:boolean}){
+  useLanguage();return <article className={`time-metric${note?"":" time-metric-no-note"}`}><span>{t(label)}</span><b>{timer?<RollingClock value={String(value)}/>:value}</b>{note&&<small>{t(note)}</small>}</article>}
 
-function WorkHoursMetric({onDutyMs,productiveMs}:{onDutyMs:number;productiveMs:number}){return <article className="time-metric time-work-hours-metric"><span>工时统计</span><div><label><small>在岗时长</small><b><RollingClock value={formatDurationWithSeconds(onDutyMs)}/></b></label><label><small>工作时长</small><b><RollingClock value={formatDurationWithSeconds(productiveMs)}/></b></label></div></article>}
+function WorkHoursMetric({onDutyMs,productiveMs}:{onDutyMs:number;productiveMs:number}){
+  useLanguage();return <article className="time-metric time-work-hours-metric"><span>{t("工时统计")}</span><div><label><small>{t("在岗时长")}</small><b><RollingClock value={formatDurationWithSeconds(onDutyMs)}/></b></label><label><small>{t("工作时长")}</small><b><RollingClock value={formatDurationWithSeconds(productiveMs)}/></b></label></div></article>}
 
-function WaveStatusMetric({total,unstarted,current,completed}:{total:number;unstarted:number;current:number;completed:number}){return <article className="time-metric time-status-metric time-wave-status-metric"><span>波次状态<small>波次数量 {total}</small></span><div><label><b>{unstarted}</b><small>未开启</small></label><i>/</i><label><b>{current}</b><small>当前</small></label><i>/</i><label><b>{completed}</b><small>已完成</small></label></div></article>}
+function WaveStatusMetric({total,unstarted,current,completed}:{total:number;unstarted:number;current:number;completed:number}){
+  useLanguage();return <article className="time-metric time-status-metric time-wave-status-metric"><span>{t("波次状态")}<small>{t("波次数量")} {total}</small></span><div><label><b>{unstarted}</b><small>{t("未开启")}</small></label><i>/</i><label><b>{current}</b><small>{t("当前")}</small></label><i>/</i><label><b>{completed}</b><small>{t("已完成")}</small></label></div></article>}
 
-function CompletionMetric({orders,pieces,multipleOrders,mixedOrders}:{orders:number;pieces:number;multipleOrders:number;mixedOrders:number}){return <article className="time-metric time-status-metric time-completion-metric"><span>完成情况<small>已完成波次</small></span><div><label><b>{orders}</b><small>单量总数</small></label><label><b>{pieces}</b><small>拣货件数</small></label><label><b>{multipleOrders}</b><small>多件订单</small></label><label><b>{mixedOrders}</b><small>混件订单</small></label></div></article>}
+function CompletionMetric({orders,pieces,multipleOrders,mixedOrders}:{orders:number;pieces:number;multipleOrders:number;mixedOrders:number}){
+  useLanguage();return <article className="time-metric time-status-metric time-completion-metric"><span>{t("完成情况")}<small>{t("已完成波次")}</small></span><div><label><b>{orders}</b><small>{t("单量总数")}</small></label><label><b>{pieces}</b><small>{t("拣货件数")}</small></label><label><b>{multipleOrders}</b><small>{t("多件订单")}</small></label><label><b>{mixedOrders}</b><small>{t("混件订单")}</small></label></div></article>}
 
-function EmployeeStatusMetric({total,picking,warehouse,standby}:{total:number;picking:number;warehouse:number;standby:number}){return <article className="time-metric time-status-metric time-employee-status-metric"><span>员工统计<small>员工总数 {total}</small></span><div><label><b>{picking}</b><small>拣货</small></label><i>/</i><label><b>{warehouse}</b><small>仓务</small></label><i>/</i><label><b>{standby}</b><small>待命</small></label></div></article>}
+function EmployeeStatusMetric({total,picking,warehouse,standby}:{total:number;picking:number;warehouse:number;standby:number}){
+  useLanguage();return <article className="time-metric time-status-metric time-employee-status-metric"><span>{t("员工统计")}<small>{t("员工总数")} {total}</small></span><div><label><b>{picking}</b><small>{t("拣货")}</small></label><i>/</i><label><b>{warehouse}</b><small>{t("仓务")}</small></label><i>/</i><label><b>{standby}</b><small>{t("待命")}</small></label></div></article>}
 
 function DailyTaskSummary({tasks,openScan}:{tasks:DashboardResponse["dailyTasks"];openScan?:((badge:string)=>void)}){
   return <section className="time-dashboard-stat-group"><div className="time-daily-task-grid">{tasks.map(task=><DailyTaskMetric task={task} openScan={openScan} key={task.id}/>)}</div></section>;
 }
 
 function DailyTaskMetric({task,openScan}:{task:DashboardResponse["dailyTasks"][number];openScan?:((badge:string)=>void)}){
+  useLanguage();
   const tooltipId=useId();
-  return <article className={`time-metric time-daily-stat${task.activeCount?" active":""}`} tabIndex={task.participants.length?0:undefined} aria-describedby={task.participants.length?tooltipId:undefined}><span>{task.name}</span><b><RollingClock value={formatDurationWithSeconds(task.totalMs)}/></b><small>{task.activeCount?`${task.activeCount} 人计时`:task.participants.length?`${task.participants.length} 人参与`:"当前无人"}</small>{task.participants.length>0&&<div id={tooltipId} role="tooltip" className="time-daily-people-popover"><strong>{task.name} · {task.participants.length} 人</strong><div>{task.participants.map(person=>openScan?<button type="button" className={`time-daily-person${person.active?" active":""}`} key={person.employeeId} onClick={()=>openScan(person.badgeCode)} title={`在任务分发中打开 ${person.name}`}><i/><b>{person.name}</b><small>{formatDurationWithSeconds(person.totalMs)}</small></button>:<span className={`time-daily-person${person.active?" active":""}`} key={person.employeeId}><i/><b>{person.name}</b><small>{formatDurationWithSeconds(person.totalMs)}</small></span>)}</div></div>}</article>;
+  return <article className={`time-metric time-daily-stat${task.activeCount?" active":""}`} tabIndex={task.participants.length?0:undefined} aria-describedby={task.participants.length?tooltipId:undefined}><span>{taskText(task.name,task.code)}</span><b><RollingClock value={formatDurationWithSeconds(task.totalMs)}/></b><small>{task.activeCount?t("{0} 人计时", {0: task.activeCount}):task.participants.length?t("{0} 人参与", {0: task.participants.length}):t("当前无人")}</small>{task.participants.length>0&&<div id={tooltipId} role="tooltip" className="time-daily-people-popover"><strong>{taskText(task.name,task.code)} · {task.participants.length} {t("人")}</strong><div>{task.participants.map(person=>openScan?<button type="button" className={`time-daily-person${person.active?" active":""}`} key={person.employeeId} onClick={()=>openScan(person.badgeCode)} title={t("在任务分发中打开 {0}", {0: person.name})}><i/><b>{person.name}</b><small>{formatDurationWithSeconds(person.totalMs)}</small></button>:<span className={`time-daily-person${person.active?" active":""}`} key={person.employeeId}><i/><b>{person.name}</b><small>{formatDurationWithSeconds(person.totalMs)}</small></span>)}</div></div>}</article>;
 }
 
 function RollingClock({value}:{value:string}){
@@ -220,14 +228,17 @@ function RollingClock({value}:{value:string}){
 }
 
 function MultiSelectFilter({label,options,excluded,open,setOpen,setExcluded}:{label:string;options:FilterOption[];excluded:string[];open:boolean;setOpen:(open:boolean)=>void;setExcluded:(excluded:string[])=>void}){
+  useLanguage();
   const selected=options.filter(option=>!excluded.includes(option.value)).length;
-  const summary=selected===options.length?"全部":selected===0?"未选择":`已选 ${selected}`;
-  return <div className="time-dashboard-filter" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))setOpen(false)}}><span>{label}</span><div><button type="button" aria-expanded={open} onClick={()=>setOpen(!open)}>{summary}<i>⌄</i></button>{open&&<div className="time-dashboard-filter-menu"><div><button type="button" onClick={()=>setExcluded([])}>全选</button><button type="button" onClick={()=>setExcluded(options.map(option=>option.value))}>清空</button></div>{options.map(option=><label key={option.value}><input type="checkbox" checked={!excluded.includes(option.value)} onChange={()=>setExcluded(excluded.includes(option.value)?excluded.filter(value=>value!==option.value):[...excluded,option.value])}/><span>{option.label}</span><small>{option.count}</small></label>)}</div>}</div></div>;
+  const summary=selected===options.length?t("全部"):selected===0?t("未选择"):t("已选 {0}",{0:selected});
+  return <div className="time-dashboard-filter" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))setOpen(false)}}><span>{t(label)}</span><div><button type="button" aria-expanded={open} onClick={()=>setOpen(!open)}>{summary}<i>⌄</i></button>{open&&<div className="time-dashboard-filter-menu"><div><button type="button" onClick={()=>setExcluded([])} data-ui-size="">{t("全选")}</button><button type="button" onClick={()=>setExcluded(options.map(option=>option.value))} data-ui-size="">{t("清空")}</button></div>{options.map(option=><label key={option.value}><input type="checkbox" checked={!excluded.includes(option.value)} onChange={()=>setExcluded(excluded.includes(option.value)?excluded.filter(value=>value!==option.value):[...excluded,option.value])}/><span>{label==="员工"||label==="渠道"?option.label:t(option.label)}</span><small>{option.count}</small></label>)}</div>}</div></div>;
 }
 
-function WaveSortHead({label,field,current,onClick}:{label:string;field:Exclude<DashboardSortKey,"default">;current:DashboardSortState;onClick:(key:Exclude<DashboardSortKey,"default">)=>void}){const active=current.key===field;return <th aria-sort={active?(current.descending?"descending":"ascending"):"none"}><button type="button" className="time-sort time-wave-sort" aria-label={`按${label}排序`} onClick={()=>onClick(field)}><span>{label}</span><i aria-hidden="true">{active?(current.descending?"↓":"↑"):"↕"}</i></button></th>}
+function WaveSortHead({label,field,current,onClick}:{label:string;field:Exclude<DashboardSortKey,"default">;current:DashboardSortState;onClick:(key:Exclude<DashboardSortKey,"default">)=>void}){
+  useLanguage();const active=current.key===field;return <th aria-sort={active?(current.descending?"descending":"ascending"):"none"} data-ui-size=""><button type="button" className="time-sort time-wave-sort" aria-label={t("按{0}排序", {0: t(label)})} onClick={()=>onClick(field)} data-ui-size=""><span>{t(label)}</span><i aria-hidden="true">{active?(current.descending?"↓":"↑"):"↕"}</i></button></th>}
 
 function WaveRow({item,pending,complete,interrupt,remove,openScan}:{item:WorkItem;pending:boolean;complete:()=>void;interrupt:()=>void;remove:()=>void;openScan?:((badge:string)=>void)}){
+  useLanguage();
   const state=waveState(item);
   const lead=item.participants.find(person=>person.role==="lead");
   const helpers=item.participants.filter(person=>person.role==="helper");
@@ -235,37 +246,19 @@ function WaveRow({item,pending,complete,interrupt,remove,openScan}:{item:WorkIte
   const removeHint=removable?"移除未开始的波次":item.status==="active"?"已有人员参与，不能移除":"已完成波次不能移除";
   const interruptible=item.status==="active"&&item.activeCount>0&&!item.interruptedAt;
   const hourlyPieces=waveHourlyPieces(item);
-  return <tr className={item.status==="completed"?"completed":item.interruptedAt?"interrupted":undefined}><td><WaveChannelTag value={item.channelName}/></td><td><WaveTypeTag value={item.channelType}/></td><td><code>{item.waveNo??item.code}</code></td><td><span className={`time-state ${waveStateClass(state)}`}>{waveStateLabel(state)}</span></td><td className="time-number">{item.skuCount}</td><td className="time-number">{item.orderCount}</td><td className="time-number">{item.pieceCount}</td><td><LeadSummary lead={lead} helpers={helpers} openScan={openScan}/></td><td className="time-number">{formatClockWithSeconds(item.startedAt)}</td><td className="time-number">{formatClockWithSeconds(item.completedAt)}</td><td className="time-number"><b>{formatDurationWithSeconds(item.totalMs)}</b></td><td className="time-number"><b>{hourlyPieces===null?"—":hourlyPieces.toLocaleString("en-US")}</b></td><td><div className="time-row-actions"><button disabled={pending||item.status==="completed"} onClick={complete} title={item.status==="completed"?"该波次已经完结":"完结波次"}>完结</button><button className="interrupt" disabled={pending||!interruptible} onClick={interrupt} title={item.interruptedAt?"该波次已中断":item.activeCount?"中断波次并将参与人员转为待命":"只有正在进行的波次可以中断"}>中断</button><button className="danger" disabled={pending||!removable} onClick={remove} title={removeHint}>移除</button></div></td></tr>;
+  return <tr className={item.status==="completed"?"completed":item.interruptedAt?"interrupted":undefined}><td><WaveChannelTag value={item.channelName}/></td><td><WaveTypeTag value={item.channelType}/></td><td><code>{item.waveNo??item.code}</code></td><td><span className={`time-state ${waveStateClass(state)}`}>{t(waveStateLabel(state))}</span></td><td className="time-number">{item.skuCount}</td><td className="time-number">{item.orderCount}</td><td className="time-number">{item.pieceCount}</td><td><LeadSummary lead={lead} helpers={helpers} openScan={openScan}/></td><td className="time-number">{formatClockWithSeconds(item.startedAt)}</td><td className="time-number">{formatClockWithSeconds(item.completedAt)}</td><td className="time-number"><b>{formatDurationWithSeconds(item.totalMs)}</b></td><td className="time-number"><b>{hourlyPieces===null?"—":hourlyPieces.toLocaleString("en-US")}</b></td><td><div className="time-row-actions"><button disabled={pending||item.status==="completed"} onClick={complete} title={item.status==="completed"?t("该波次已经完结"):t("完结波次")} data-ui-size="">{t("完结")}</button><button className="interrupt" disabled={pending||!interruptible} onClick={interrupt} title={item.interruptedAt?t("该波次已中断"):item.activeCount?t("中断波次并将参与人员转为待命"):t("只有正在进行的波次可以中断")} data-ui-size="">{t("中断")}</button><button className="danger" disabled={pending||!removable} onClick={remove} title={removeHint} data-ui-size="">{t("移除")}</button></div></td></tr>;
 }
 
-function LeadSummary({lead,helpers,openScan}:{lead:WorkParticipant|undefined;helpers:WorkParticipant[];openScan?:((badge:string)=>void)}){
-  const triggerRef=useRef<HTMLButtonElement>(null);
-  const hideTimerRef=useRef<number|null>(null);
-  const tooltipId=useId();
-  const [position,setPosition]=useState<{left:number;top:number;above:boolean}|null>(null);
-  const cancelHide=()=>{if(hideTimerRef.current!==null){window.clearTimeout(hideTimerRef.current);hideTimerRef.current=null}};
-  const show=()=>{
-    cancelHide();
-    const trigger=triggerRef.current;if(!trigger||!helpers.length)return;
-    const bounds=trigger.getBoundingClientRect();
-    const width=Math.min(370,window.innerWidth-24);
-    const above=window.innerHeight-bounds.bottom<170&&bounds.top>170;
-    setPosition({left:Math.max(12,Math.min(window.innerWidth-width-12,bounds.left+bounds.width/2-width/2)),top:above?bounds.top-8:bounds.bottom+8,above});
-  };
-  const hide=()=>{cancelHide();hideTimerRef.current=window.setTimeout(()=>{setPosition(null);hideTimerRef.current=null},120)};
-  useEffect(()=>()=>cancelHide(),[]);
-  return <div className="time-dashboard-lead-summary">{lead?<PersonTag person={lead} showDuration={false} openScan={openScan}/>:<span className="time-dashboard-person time-person-empty">—</span>}<button ref={triggerRef} className="time-dashboard-helper-trigger" type="button" aria-describedby={position?tooltipId:undefined} aria-label={helpers.length?`协同 ${helpers.length} 人：${helpers.map(person=>person.name).join("、")}`:"无协同人员"} onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}><b>{helpers.length}</b></button>{position&&createPortal(<div id={tooltipId} role="tooltip" className={`time-dashboard-helper-popover${position.above?" above":""}`} style={{left:position.left,top:position.top}} onMouseEnter={cancelHide} onMouseLeave={hide}><strong>协同人员 · {helpers.length}</strong><div>{helpers.map(person=><PersonTag person={person} openScan={openScan} key={person.employeeId}/>)}</div></div>,document.body)}</div>;
-}
-
-function PersonTag({person,showDuration=true,openScan}:{person:WorkParticipant;showDuration?:boolean;openScan?:((badge:string)=>void)}){const className=`time-dashboard-person${person.active?" active":""}`;const title=openScan?`在任务分发中打开 ${person.name}`:showDuration?`${person.name} · ${formatDurationWithSeconds(person.totalMs)}`:person.name;const content=<><i/><b>{person.name}</b>{showDuration&&<small>{formatDurationWithSeconds(person.totalMs)}</small>}</>;return openScan?<button type="button" className={className} title={title} onClick={()=>openScan(person.badgeCode)}>{content}</button>:<span className={className} title={title}>{content}</span>}
 
 function WaveImportModal({close,saved}:{close:()=>void;saved:()=>Promise<void>}){
+  useLanguage();
   const [text,setText]=useState("");const [error,setError]=useState("");const [pending,setPending]=useState(false);const parsed=useMemo(()=>parseWaveText(text),[text]);
   const submit=async(event:FormEvent)=>{event.preventDefault();if(!parsed.length){setError("未识别到有效波次，请检查波次号。");return}setPending(true);setError("");try{await timeApi("/api/v1/timekeeping/waves",{method:"POST",body:JSON.stringify({items:parsed})});await saved()}catch(saveError){setError(saveError instanceof Error?saveError.message:"波次导入失败")}finally{setPending(false)}};
-  return <div className="modal-backdrop"><form className="modal-card time-wave-import" onSubmit={submit}><div className="modal-head"><div><span className="modal-kicker">现场看板</span><h3>导入当前波次</h3></div><button type="button" onClick={close}>×</button></div><div className="time-edit-fields"><label><span>粘贴制表符或逗号分隔的波次数据</span><textarea value={text} onChange={event=>setText(event.target.value)} rows={9} placeholder={"渠道\t波次号\t类型\tSKU数\t订单数\t件数\nAmazon\tW202608270001\t多件\t24\t80\t126"} required/></label><WavePreview rows={parsed}/>{error&&<div className="time-error">{error}</div>}</div><div className="modal-actions"><button type="button" onClick={close}>取消</button><button className="primary" disabled={pending||!parsed.length}>导入 {parsed.length} 个波次</button></div></form></div>;
+  return <div className="modal-backdrop"><form className="modal-card time-wave-import" onSubmit={submit}><div className="modal-head"><div><span className="modal-kicker">{t("现场看板")}</span><h3 data-ui-size="">{t("导入当前波次")}</h3></div><button type="button" onClick={close}>×</button></div><div className="time-edit-fields"><label><span>{t("粘贴制表符或逗号分隔的波次数据")}</span><textarea value={text} onChange={event=>setText(event.target.value)} rows={9} placeholder={t("渠道\t波次号\t类型\tSKU数\t订单数\t件数\nAmazon\tW202608270001\t多件\t24\t80\t126")} required/></label><WavePreview rows={parsed}/>{error&&<div className="time-error">{t(error)}</div>}</div><div className="modal-actions"><button type="button" onClick={close} data-ui-size="">{t("取消")}</button><button className="primary" disabled={pending||!parsed.length} data-ui-size="">{t("导入")} {parsed.length} {t("个波次")}</button></div></form></div>;
 }
 
-function WavePreview({rows}:{rows:ParsedWave[]}){if(!rows.length)return <p className="time-empty">尚未识别到可导入的波次</p>;return <div className="time-wave-preview">{rows.slice(0,8).map(row=><div key={row.waveNo}><b>{row.waveNo}</b><span>{row.channelName} · {row.channelType}</span><small>{row.skuCount} SKU / {row.orderCount} 单 / {row.pieceCount} 件</small></div>)}{rows.length>8&&<p>还有 {rows.length-8} 个波次</p>}</div>}
+function WavePreview({rows}:{rows:ParsedWave[]}){
+  useLanguage();if(!rows.length)return <p className="time-empty">{t("尚未识别到可导入的波次")}</p>;return <div className="time-wave-preview">{rows.slice(0,8).map(row=><div key={row.waveNo}><b>{row.waveNo}</b><span>{row.channelName} · {row.channelType}</span><small>{row.skuCount} SKU / {row.orderCount} {t("单 /")} {row.pieceCount} {t("件")}</small></div>)}{rows.length>8&&<p>{t("还有")} {rows.length-8} {t("个波次")}</p>}</div>}
 
 function dashboardView(data:DashboardResponse|null,now:number){
   const liveElapsed=data&&now>=new Date(data.range.start).getTime()&&now<new Date(data.range.end).getTime()?Math.max(0,now-new Date(data.generatedAt).getTime()):0;

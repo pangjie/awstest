@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 import "./warehouse-enhancements.css";
 import "./timekeeping.css";
+import LanguageButton from "./ui-language";
 
 const assetRecoveryScript = `(()=>{
   const key="neiku_asset_reload_at";
@@ -60,5 +61,5 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function RootLayout({children}: Readonly<{children: React.ReactNode}>) {
-  return <html lang="zh-CN"><head><script dangerouslySetInnerHTML={{__html:assetRecoveryScript}}/></head><body>{children}</body></html>;
+  return <html lang="zh-CN"><head><script dangerouslySetInnerHTML={{__html:assetRecoveryScript}}/></head><body>{children}<LanguageButton/></body></html>;
 }

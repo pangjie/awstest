@@ -1,4 +1,5 @@
 "use client";
+import { t, useLanguage, taskText, durationText } from "@/app/ui-language";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isValidEmployeeId, sanitizeEmployeeId } from "@/lib/timekeeping/employee-id";
@@ -23,6 +24,7 @@ const SCAN_REGIONS:ScanRegion[]=[
 ];
 
 export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
+  useLanguage();
   const [report,setReport]=useState<CardScanEmployeeResponse|null>(null);
   const [selection,setSelection]=useState<AttendanceAction|null>(null);
   const [cameraOpen,setCameraOpen]=useState(false);
@@ -149,7 +151,7 @@ export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
     const label=selection==="sign_in"?"Sign In":"Sign Out";
     try{
       await timeApi<ScanResponse>("/api/v1/timekeeping/card-scan",{method:"POST",body:JSON.stringify({code:selection==="sign_in"?"ACT-CLOCKIN":"ACT-OUT",employeeId:report.snapshot.employee.id,requestId:crypto.randomUUID()})});
-      setReport(null);setSelection(null);setNotice(`${label} 已提交，请扫描下一位员工`);
+      setReport(null);setSelection(null);setNotice(label);
     }catch(submitError){setError(submitError instanceof Error?submitError.message:`${label} 失败`)}
     finally{setSubmitting(false)}
   },[report,selection,submitting]);
@@ -157,46 +159,47 @@ export default function CardScanPage({portableDevice}:{portableDevice:boolean}){
   const timelineRows=useMemo(()=>report?buildDailyTimelineRows(report,report.workDate,now):[],[now,report]);
   const onDuty=Boolean(report?.snapshot.shift);
 
-  if(!portableDevice)return <div className="time-page time-card-scan-unavailable"><div><span>▣</span><h2>工卡扫描仅供移动终端使用</h2><p>请使用 iPhone、iPad 或其他带摄像头的触控终端打开本页面。</p></div></div>;
+  if(!portableDevice)return <div className="time-page time-card-scan-unavailable"><div><span>▣</span><h2 data-ui-size="">{t("工卡扫描仅供移动终端使用")}</h2><p>{t("请使用 iPhone、iPad 或其他带摄像头的触控终端打开本页面。")}</p></div></div>;
 
-  return <div className="time-page time-card-scan-page" aria-label="工卡扫描">
+  return <div className="time-page time-card-scan-page" aria-label={t("工卡扫描")}>
     <section className={`time-card-camera${cameraOpen?" active":""}`}>
       <div className="time-card-camera-view">
-        <video ref={videoRef} autoPlay muted playsInline aria-label="工卡扫描摄像头画面"/>
-        {!cameraOpen&&<div className="time-card-camera-placeholder"><span>▣</span><b>{loading?"正在读取员工信息":"点击扫描开启摄像头"}</b></div>}
+        <video ref={videoRef} autoPlay muted playsInline aria-label={t("工卡扫描摄像头画面")}/>
+        {!cameraOpen&&<div className="time-card-camera-placeholder"><span>▣</span><b>{loading?t("正在读取员工信息"):t("点击扫描开启摄像头")}</b></div>}
         {cameraOpen&&<div className="time-card-camera-frame" aria-hidden="true"><i/><i/><i/><i/><span/></div>}
-        <button type="button" className="time-card-scan-sound" aria-pressed={soundEnabled} aria-label={soundEnabled?"关闭扫描成功提示音":"开启扫描成功提示音"} disabled={cameraOpen} onClick={toggleSound}><span aria-hidden="true">{soundEnabled?"♪":"×"}</span><b>{soundEnabled?"提示音":"已静音"}</b></button>
+        <button type="button" className="time-card-scan-sound" aria-pressed={soundEnabled} aria-label={soundEnabled?t("关闭扫描成功提示音"):t("开启扫描成功提示音")} disabled={cameraOpen} onClick={toggleSound} data-ui-size=""><span aria-hidden="true">{soundEnabled?"♪":"×"}</span><b>{soundEnabled?t("提示音"):t("已静音")}</b></button>
       </div>
-      <button type="button" className="time-card-scan-button" disabled={cameraOpen||loading||submitting} onClick={()=>void startCamera()}><span>⌁</span><b>{cameraOpen?"扫描中":"扫描"}</b></button>
+      <button type="button" className="time-card-scan-button" disabled={cameraOpen||loading||submitting} onClick={()=>void startCamera()} data-ui-size=""><span>⌁</span><b>{cameraOpen?t("扫描中"):t("扫描")}</b></button>
     </section>
 
     <section className={`time-card-scan-identity${successFlash?" success":""}`} aria-live="polite">
-      <span>姓名</span>
-      <strong>{loading?"读取中…":report?.snapshot.employee.name??"尚未识别员工"}</strong>
+      <span>{t("姓名")}</span>
+      <strong>{loading?t("读取中…"):report?.snapshot.employee.name??t("尚未识别员工")}</strong>
     </section>
 
-    <section className="time-card-scan-actions" aria-label="考勤操作">
-      <button type="button" className={`sign-in${selection==="sign_in"?" selected":""}`} aria-pressed={selection==="sign_in"} disabled={!report||onDuty||report.snapshot.state==="inactive"||submitting} onClick={()=>setSelection("sign_in")}><b>Sign In</b></button>
-      <button type="button" className={`sign-out${selection==="sign_out"?" selected":""}`} aria-pressed={selection==="sign_out"} disabled={!report||!onDuty||submitting} onClick={()=>setSelection("sign_out")}><b>Sign Out</b></button>
-      <button type="button" className="confirm" disabled={!report||!selection||submitting} onClick={()=>void confirm()}><b>{submitting?"提交中":"Confirm"}</b></button>
+    <section className="time-card-scan-actions" aria-label={t("考勤操作")}>
+      <button type="button" className={`sign-in${selection==="sign_in"?" selected":""}`} aria-pressed={selection==="sign_in"} disabled={!report||onDuty||report.snapshot.state==="inactive"||submitting} onClick={()=>setSelection("sign_in")} data-ui-size=""><b>{t("Sign In")}</b></button>
+      <button type="button" className={`sign-out${selection==="sign_out"?" selected":""}`} aria-pressed={selection==="sign_out"} disabled={!report||!onDuty||submitting} onClick={()=>setSelection("sign_out")} data-ui-size=""><b>{t("Sign Out")}</b></button>
+      <button type="button" className="confirm" disabled={!report||!selection||submitting} onClick={()=>void confirm()} data-ui-size=""><b>{submitting?t("提交中"):t("Confirm")}</b></button>
     </section>
 
-    {error&&<div className="time-card-scan-message error" role="alert">{error}</div>}
-    {notice&&<div className="time-card-scan-message success" role="status">{notice}</div>}
+    {error&&<div className="time-card-scan-message error" role="alert">{t(error)}</div>}
+    {notice&&<div className="time-card-scan-message success" role="status">{t("{0} 已提交，请扫描下一位员工",{0:t(notice)})}</div>}
 
     <section className="time-card-scan-timeline">
-      <div><span>当天处理内容</span><b>{report?`${report.workDate} · ${timelineRows.length} 条`:"扫描员工后显示"}</b></div>
-      {report?(timelineRows.length?<div className="time-card-scan-timeline-list">{timelineRows.map(row=><MobileTimelineRow key={row.id} row={row}/>)}</div>:<p>今天没有考勤或工作记录</p>):<p>员工的 Sign In、Sign Out 和工作内容会显示在这里</p>}
+      <div><span>{t("当天处理内容")}</span><b>{report?t("{0} · {1} 条", {0: report.workDate, 1: timelineRows.length}):t("扫描员工后显示")}</b></div>
+      {report?(timelineRows.length?<div className="time-card-scan-timeline-list">{timelineRows.map(row=><MobileTimelineRow key={row.id} row={row}/>)}</div>:<p>{t("今天没有考勤或工作记录")}</p>):<p>{t("员工的 Sign In、Sign Out 和工作内容会显示在这里")}</p>}
     </section>
   </div>;
 }
 
 function MobileTimelineRow({row}:{row:DailyTimelineRow}){
-  return <article className={row.kind}><div><strong>{row.nature}</strong>{row.waveNo&&<code>{row.waveNo}</code>}<time>{row.clock}</time></div><MobileTimelineContent row={row}/>{row.duration&&<b>{row.duration}</b>}</article>;
+  useLanguage();
+  return <article className={row.kind}><div><strong>{t(row.nature)}</strong>{row.waveNo&&<code>{row.waveNo}</code>}<time>{row.clock}</time></div><MobileTimelineContent row={row}/>{row.duration&&<b>{durationText(row.duration)}</b>}</article>;
 }
 
 function MobileTimelineContent({row}:{row:DailyTimelineRow}){
-  if(!row.project||row.project.workType!=="wave")return <p>{row.content}</p>;
+  if(!row.project||row.project.workType!=="wave")return <p>{row.project?taskText(row.content,row.project.code):t(row.content)}</p>;
   return <p className="time-card-scan-wave"><span><WaveChannelTag value={row.project.channelName}/><WaveTypeTag value={row.project.channelType}/></span><em>{row.content}</em></p>;
 }
 
