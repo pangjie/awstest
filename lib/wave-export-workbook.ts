@@ -12,6 +12,9 @@ function localTime(iso:string|null){
   if(!iso)return "";
   return localTimeFormatter.format(new Date(iso));
 }
+function utcTime(iso:string|null){
+  return iso?new Date(iso).toISOString().replace(/\.\d{3}Z$/,"Z"):"";
+}
 export async function buildWaveWorkbook(rows:ExportWave[],metadata:ReturnType<typeof exportMetadata>,checkpoint=()=>{}){
   const stream=new PassThrough();
   let chunks:Buffer[]=[],size=0;
@@ -19,7 +22,7 @@ export async function buildWaveWorkbook(rows:ExportWave[],metadata:ReturnType<ty
   const book=new ExcelJS.stream.xlsx.WorkbookWriter({stream,useStyles:true,useSharedStrings:false});
   const sheet=book.addWorksheet("波次数据",{views:[{state:"frozen",ySplit:1}]});
   try{
-  const headers=["渠道","类型","波次号","状态","SKU","订单","件数","负责人","协同人员","开始时间","完结时间","波次工时","时效","记录状态"];
+  const headers=["渠道","类型","波次号","状态","SKU","订单","件数","姓名","协同人员","开始时间","完结时间","用时","时效","记录状态"];
   sheet.addRow(headers);
   [14,12,24,12,10,10,10,20,40,32,32,18,12,12].forEach((width,i)=>{sheet.getColumn(i+1).width=width});
   sheet.getColumn(12).numFmt="[h]:mm:ss";
@@ -29,12 +32,12 @@ export async function buildWaveWorkbook(rows:ExportWave[],metadata:ReturnType<ty
   sheet.getRow(1).commit();
   for(const [index,row] of rows.entries()){
     if(index%250===0){await setImmediate();checkpoint()}
-    sheet.addRow([row.channel,row.type,row.waveNo,row.statusLabel,row.skuCount,row.orderCount,row.pieceCount,row.lead??"",row.helpers.join("、"),localTime(row.startedAt),localTime(row.completedAt),row.totalMs/86400000,row.hourlyPieces,row.recordStatus]).commit();
+    sheet.addRow([row.channel,row.type,row.waveNo,row.statusLabel,row.skuCount,row.orderCount,row.pieceCount,row.lead??"",row.helpers.join("、"),utcTime(row.startedAt),utcTime(row.completedAt),row.totalMs/86400000,row.hourlyPieces,row.recordStatus]).commit();
   }
   sheet.commit();
   const notes=book.addWorksheet("导出说明");
   notes.columns=[{width:22},{width:100}];
-  const noteRows=[["项目","内容"],["格式版本",metadata.version],["日期",metadata.date],["日期依据","创建日期"],["时区",metadata.timeZone],["导出时间",localTime(metadata.generatedAt)],["波次数量",metadata.count],["工时口径","所选波次截至导出时刻的完整累计有效人工工时，含负责人和协同，不含不在岗时间"],["时效口径","件数 ÷ 累计工时小时数，四舍五入为整数；工时为零则留空"],["时间说明","时间列为美东当地时间及 UTC 偏移；进行中数据以导出时间为准"],["行顺序","波次添加顺序"],["空数据","无匹配波次时仍保留表头；不静默截断数据"]];
+  const noteRows=[["项目","内容"],["格式版本",metadata.version],["日期",metadata.date],["日期依据","创建日期"],["日期筛选时区",metadata.timeZone],["导出时间",localTime(metadata.generatedAt)],["波次数量",metadata.count],["工时口径","所选波次截至导出时刻的完整累计有效人工工时，含负责人和协同，不含不在岗时间"],["时效口径","件数 ÷ 累计工时小时数，四舍五入为整数；工时为零则留空"],["时间说明","开始时间、完结时间为 UTC 零时区 ISO 8601 文本（Z 结尾，精确到秒）；日期筛选和导出时间仍为美东时间；进行中数据以导出时间为准"],["行顺序","波次添加顺序"],["空数据","无匹配波次时仍保留表头；不静默截断数据"]];
   for(const values of noteRows)notes.addRow(values);
   notes.getRow(1).font={bold:true};notes.getColumn(2).alignment={wrapText:true,vertical:"top"};
   notes.commit();
