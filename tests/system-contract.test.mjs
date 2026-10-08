@@ -639,7 +639,7 @@ test("uses one ExcelJS implementation for all workbook downloads",async()=>{
   assert.equal(packageJson.dependencies.exceljs,"^4.4.0");
   assert.equal(packageJson.dependencies["bwip-js"],"^4.11.4");
   assert.equal(packageJson.dependencies.jszip,"^3.10.1");
-  assert.equal(packageJson.dependencies.sharp,"^0.35.4");
+  assert.equal(packageJson.dependencies.sharp,"^0.35.5");
   assert.equal(packageJson.dependencies.xlsx,undefined);
   assert.match(app,/async function downloadReserveWorkbook/);
   assert.match(app,/await downloadWorksheet\(\{/);

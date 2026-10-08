@@ -128,6 +128,8 @@ Terraform 只创建 `aws-miniflow/initial-admin` Secrets Manager 容器，不把
 
 ## 数据库与回滚
 
+波次公开下载链接及调用示例见 [波次导出 API 使用说明](docs/wave-export-api.md)。接口为 `/api/v1/exports/waves?date=YYYY-MM-DD`，无需登录或密钥，所有访问者共用每日 100 次、每分钟 6 次及单并发限制。导出包含员工姓名，请仅在接受数据公开的环境部署。
+
 新版建表只添加 WMS 表和索引，不删除旧版演示站的 `messages` 表。因此 ECR 中的上一个应用镜像仍可以回滚运行。后续所有数据库变更都必须遵守 expand/contract，禁止在新镜像首次发布时删列或改写不兼容数据。
 
 ## 基础设施边界
