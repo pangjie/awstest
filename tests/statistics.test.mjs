@@ -20,7 +20,9 @@ test("statistics summary tables are unpaged and detail navigation uses employee 
   assert.match(page, /compact paginate={false} rows={result.types}/);
   assert.ok(page.includes("paginate?ordered.slice(current*100,(current+1)*100):ordered"));
   assert.ok(page.includes("people.filter(p=>p.days||p.issues||p.workMs)"));
-  assert.ok(page.includes("compact paginate={false} rows={people.filter"));
+  assert.ok(page.includes("compact paginate={false} expanded rows={people.filter"));
+  assert.ok(page.includes("compact paginate={false} expanded key={employee}"));
+  assert.ok(readFileSync("app/timekeeping/statistics.css","utf8").includes(".stats-table.stats-table-expanded{max-height:none;overflow:visible}"));
   assert.doesNotMatch(page,/导出包含完整查询范围，不受页面筛选影响/);
   assert.ok(page.includes("setEmployee(String(p.id));setTab(2)"));
   assert.ok(page.includes("result.daily.filter(d=>d.employeeId===Number(employee))"));
@@ -119,6 +121,10 @@ test("unfinished historical waves do not contribute completed output",()=>{
 test("Excel shares calculation results, contains no employee IDs and preserves numeric durations",async()=>{
   const r=computeStatistics(input({employees:[employee(777,"=NAME")],items:[item(1)],shifts:[shift(1,777,12,18)],sessions:[session(1,777,1,1,12,15)]}));
   const sheets=statisticsSheets(r);assert.equal(sheets.length,6);
+  const types=sheets.find(s=>s.sheetName==="波次类型汇总");
+  assert.equal(types.rows[0].length,9);
+  assert.ok(types.rows.every(row=>row.length===9));
+  assert.ok(!types.rows[0].includes("核对状态"));
   assert.deepEqual(sheets.slice(0,4).map(s=>s.sheetName),["总体统计","项目工时","波次类型汇总","员工汇总"]);
   assert.equal(JSON.stringify(sheets).includes("777"),false);
   const book=new ExcelJS.Workbook();
@@ -157,6 +163,21 @@ test("Excel includes all recorded employees, omits empty employees, and retains 
   assert.ok(!employees.rows.some(row=>row[0]==="Empty"));
   assert.ok(sheets.some(s=>s.sheetName==="异常记录"));
   assert.deepEqual(sheets.find(s=>s.sheetName==="每日汇总").rows[0],["日期","姓名",...r.projectNames,"在岗待命","工作时长"]);
+});
+
+test("project daily averages and participant-days deduplicate resumed sessions",()=>{
+  const nextDay=s=>s.replace("2026-09-01","2026-09-02");
+  const laterShift={...shift(2,1,12,18),date:"2026-09-02",start:nextDay(at(12)),end:nextDay(at(18))};
+  const laterSession={...session(3,1,2,1,12,14),start:nextDay(at(12)),end:nextDay(at(14))};
+  const r=computeStatistics(input({endDate:"2026-09-03",items:[item(1)],shifts:[shift(1,1,12,18),laterShift],sessions:[session(1,1,1,1,12,13),session(2,1,1,1,14,15),laterSession]}));
+  const p=r.projects.find(p=>p.name==="仓务");
+  assert.equal(p.ms,4*hour);assert.equal(p.count,2);
+  assert.equal(p.dailyAverageMs,2*hour);assert.equal(p.averageMs,2*hour);
+  const sheet=statisticsSheets(r).find(s=>s.sheetName==="项目工时");
+  assert.deepEqual(sheet.rows[0],["项目","总用时","参与人次","工时占比"]);
+  assert.equal(sheet.numberFormats[2],"[h]:mm");assert.equal(sheet.numberFormats[4],"0.0%");
+  const empty=computeStatistics(input()).projects[0];
+  assert.equal(empty.dailyAverageMs,0);assert.equal(empty.averageMs,0);
 });
 
 test("project order is stable and overall efficiency includes standby attendance",()=>{

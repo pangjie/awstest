@@ -7,6 +7,10 @@ export function isLanguage(value: unknown): value is Language {
 
 // Source strings are display keys only. Never translate API values, identifiers or exports.
 export const messages: Record<string, readonly [string, string]> = {
+  "未归类在岗时间":["Unclassified on-duty time","Tiempo de presencia sin clasificar"],
+  "日均用时":["Daily average time","Tiempo medio diario"],
+  "参与人次":["Participant-days","Participaciones por día"],
+  "工时占比":["Share of on-duty time","Proporción del tiempo de presencia"],
   "请在员工汇总中点击姓名，查看该员工的每日汇总。":["Click a name in Employee summary to view their daily totals.","Haga clic en un nombre en el resumen por empleado para ver sus totales diarios."],
   "本月至今天":["Month through today","Mes hasta hoy"],
   "今天":["Today","Hoy"],

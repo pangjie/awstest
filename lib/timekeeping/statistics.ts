@@ -159,9 +159,10 @@ export function computeStatistics(input:StatsInput){
     const assigned=allocations.filter(a=>a.employeeId===e.id),pieces=assigned.reduce((n,a)=>n+a.pieces,0),waveMs=assigned.reduce((n,a)=>n+a.ms,0);
     return {...e,days:rows.filter(d=>d.onDutyMs>0).length,onDutyMs:rows.reduce((n,d)=>n+d.onDutyMs,0),workMs:rows.reduce((n,d)=>n+d.workMs,0),standbyMs:rows.reduce((n,d)=>n+d.standbyMs,0),projects,pieces,waveMs,waves:assigned.length,efficiency:rate(pieces,waveMs),issues:issues.filter(i=>i.employeeId===e.id).length};
   }).sort((a,b)=>a.name.localeCompare(b.name,"zh-CN")||a.id-b.id);
+  const workDays=new Set(daily.filter(d=>d.onDutyMs>0).map(d=>d.date)).size;
   const projects=[...projectNames,"在岗待命"].map(name=>{
-    const rows=fragments.filter(f=>f.project===name),ms=rows.reduce((n,f)=>n+f.ms,0),count=new Set(rows.map(f=>f.employeeId)).size;
-    return {name,ms,count,averageMs:count?ms/count:0};
+    const rows=fragments.filter(f=>f.project===name),ms=rows.reduce((n,f)=>n+f.ms,0),count=new Set(rows.map(f=>`${f.employeeId}:${f.date}`)).size;
+    return {name,ms,count,dailyAverageMs:workDays?ms/workDays:0,averageMs:count?ms/count:0};
   });
   for(const person of people)if(person.issues)person.efficiency=null;
   for(const day of daily)if(issues.some(i=>i.employeeId===day.employeeId&&i.date===day.date))day.efficiency=null;
