@@ -62,6 +62,8 @@ export async function downloadWorkbook(input:{
     sheetName:string;
     widths?:number[];
     autoFilter?:string;
+    numberFormats?:Record<number,string>;
+    cellFormats?:Record<string,string>;
   }>;
   fileName:string;
 }) {
@@ -70,6 +72,8 @@ export async function downloadWorkbook(input:{
     const worksheet=workbook.addWorksheet(sheet.sheetName);
     worksheet.addRows(sheet.rows);
     sheet.widths?.forEach((width,index)=>{worksheet.getColumn(index+1).width=width});
+    for(const [column,format] of Object.entries(sheet.numberFormats??{}))worksheet.getColumn(Number(column)).numFmt=format;
+    for(const [address,format] of Object.entries(sheet.cellFormats??{}))worksheet.getCell(address).numFmt=format;
     if(sheet.autoFilter)worksheet.autoFilter=sheet.autoFilter;
     worksheet.views=[{state:"frozen",ySplit:1}];
   }

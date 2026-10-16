@@ -133,10 +133,10 @@ test("uses one backward-compatible runtime schema path",async()=>{
 test("grants admin every registered page and keeps ordinary accounts explicitly scoped",async()=>{
   const permissions=await loadPure("page-permissions");
   const keys=permissions.PAGE_DEFINITIONS.map(page=>page.key);
-  assert.equal(new Set(keys).size,13);
+  assert.equal(new Set(keys).size,14);
   assert.deepEqual(
     permissions.NAVIGATION_DEFINITIONS.map(page=>page.label),
-    ["备货操作","备库总表","备货待办","备货数据","任务分发","工卡扫描","现场看板","工作记录","员工数据"],
+    ["备货操作","备库总表","备货待办","备货数据","任务分发","工卡扫描","现场看板","综合统计","工作记录","员工数据"],
   );
   assert.deepEqual(
     permissions.WAREHOUSE_DATA_TABS.map(page=>page.key),
@@ -144,7 +144,7 @@ test("grants admin every registered page and keeps ordinary accounts explicitly 
   );
   assert.deepEqual(
     permissions.TIMEKEEPING_PAGES.map(page=>page.key),
-    ["time-scan","time-card-scan","time-dashboard","time-records","time-employees"],
+    ["time-scan","time-card-scan","time-dashboard","time-statistics","time-records","time-employees"],
   );
   assert.equal(keys.includes("reserve-statistics"),false);
   assert.deepEqual(permissions.effectivePagePermissions("admin",[]),keys);
