@@ -18,6 +18,7 @@ import BrandMark from "./brand-mark";
 import MobileWarehouseTasks from "./mobile-warehouse-tasks";
 import { currentDate } from "./timekeeping/format";
 import TimekeepingModule from "./timekeeping/timekeeping-module";
+import type { StatisticsResult } from "@/lib/timekeeping/statistics";
 import type { DashboardFilters, DashboardSortState, EmployeeSortState, ScanWaveSortState } from "./timekeeping/types";
 
 type Role="admin"|"manager"|"operator";
@@ -220,6 +221,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
   const [timeDashboardExportKey,setTimeDashboardExportKey]=useState(0);
   const [timeDashboardImportOpen,setTimeDashboardImportOpen]=useState(false);
   const [timekeepingTitleTarget,setTimekeepingTitleTarget]=useState<HTMLDivElement|null>(null);
+  const [timeStatistics,setTimeStatistics]=useState<StatisticsResult|null>(null);
   const portableDevice=useSyncExternalStore(subscribePortableDevice,getPortableDeviceSnapshot,getServerPortableDeviceSnapshot);
   const [ledgerMovements,setLedgerMovements]=useState<Movement[]|null>(null);
   const [taskHistory,setTaskHistory]=useState<Task[]|null>(null);
@@ -398,6 +400,7 @@ export default function WarehouseApp({user}:{user:SessionUser}) {
           {allowedPageKeys.has("warehouse-ledger")&&<div className="warehouse-data-panel" role="tabpanel" hidden={warehouseDataTab!=="warehouse-ledger"}><WarehouseLedger key={`${ledgerEntry.tab}:${ledgerEntry.query}`} pallets={data!.pallets} locations={allLocations} movements={ledgerMovements??[]} initialTab={ledgerEntry.tab} initialQuery={ledgerEntry.query} invalidSkuCodes={invalidSkuCodes} loading={ledgerLoading||pickLocationsLoading} error={ledgerError||pickLocationsError} api={requestApi} done={async message=>{notify(message);await refresh()}}/></div>}
         </div>}
         {activeTimekeepingPage&&<TimekeepingModule
+          statistics={timeStatistics} setStatistics={setTimeStatistics}
           page={activeTimekeepingPage} titleTarget={timekeepingTitleTarget} isAdmin={effectiveUser.role==="admin"}
           initialScanBadge={timeScanBadge} initialRecordBadge={timeRecordBadge} scanSort={timeScanSort} setScanSort={setTimeScanSort}
           openScan={allowedPageKeys.has("time-scan")?badge=>{setTimeScanBadge(badge);setActive("任务分发")}:undefined}
