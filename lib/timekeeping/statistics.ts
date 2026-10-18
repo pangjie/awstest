@@ -49,7 +49,7 @@ export function computeStatistics(input:StatsInput){
   const issues:StatsIssue[]=[],fragments:StatsFragment[]=[],allocations:StatsAllocation[]=[];
   const issue=(employeeId:number|null,date:string,task:string,message:string)=>issues.push({employeeId,date,task,message});
   const shiftIntervals=new Map<number,Interval>();
-  const uncertainDays=new Set<string>(),badItems=new Set<number>();
+  const uncertainDays=new Set<string>(),badItems=new Set<number>(),invalidSessions=new Set<number>();
   const days=new Map<string,{employeeId:number;date:string;attendance:Interval[];work:Interval[];sessions:Array<{interval:Interval;session:StatsSession;item:StatsItem;modified:boolean}>}>();
   const getDay=(employeeId:number,date:string)=>{
     const key=`${employeeId}:${date}`;
@@ -77,7 +77,7 @@ export function computeStatistics(input:StatsInput){
     const rawStart=Date.parse(session.start),rawEnd=session.end?Date.parse(session.end):hi;
     if(!Number.isFinite(rawStart+rawEnd)||rawEnd<=rawStart){issue(session.employeeId,date,item.name,"任务时间无效");uncertainDays.add(`${session.employeeId}:${date}`);badItems.add(item.id);continue}
     const start=Math.max(rawStart,bounds[0]),end=Math.min(rawEnd,bounds[1]);
-    if(rawStart<bounds[0]||Math.min(rawEnd,hi)>bounds[1]){issue(session.employeeId,date,item.name,"任务超出考勤区间，已按交集统计");badItems.add(item.id)}
+    if(rawStart<bounds[0]||Math.min(rawEnd,hi)>bounds[1]){issue(session.employeeId,date,item.name,"任务超出考勤区间，在岗内部分归入未标注");badItems.add(item.id);invalidSessions.add(session.id)}
     if(end<=start)continue;
     getDay(session.employeeId,date).sessions.push({interval:[start,end],session,item,modified:session.modified||shift.modified});
   }
@@ -98,7 +98,7 @@ export function computeStatistics(input:StatsInput){
     const projects:Record<string,number>={};
     for(const [i,s] of ordered.entries()){
       day.work.push(s.interval);
-      if(invalid.has(i)){badItems.add(s.item.id);continue}
+      if(invalid.has(i)||invalidSessions.has(s.session.id)){badItems.add(s.item.id);continue}
       const project=s.item.kind==="wave"?"波次拣货":s.item.name;
       projectNames.add(project);
       const ms=s.interval[1]-s.interval[0];projects[project]=(projects[project]??0)+ms;
@@ -122,18 +122,24 @@ export function computeStatistics(input:StatsInput){
   for(const f of fragments)if(f.itemId!==null&&items.get(f.itemId)?.kind==="wave"){
     if(!waveFragments.has(f.itemId))waveFragments.set(f.itemId,[]);waveFragments.get(f.itemId)!.push(f);
   }
+  const unclassify=(parts:StatsFragment[])=>{
+    for(const part of parts){
+      const day=daily.find(d=>d.employeeId===part.employeeId&&d.date===part.date)!;
+      day.projects[part.project]-=part.ms;day.workMs-=part.ms;
+      part.project="未标注";part.itemId=null;
+    }
+  };
   for(const item of input.items){
     if(item.kind!=="wave")continue;
     if(Date.parse(item.createdAt)>=hi)continue;
     const date=workDate(item.createdAt),parts=waveFragments.get(item.id)??[];
-    if(date<input.startDate||date>input.endDate){if(parts.length)issue(null,date,item.waveNo??item.name,"跨日期波次不符合统计口径");continue}
-    if(item.status!=="completed"||!item.completedAt||Date.parse(item.completedAt)>hi){if(date!==snapshotDate)issue(null,date,item.waveNo??item.name,"历史波次未完结，不计入完成产量与时效");continue}
-    if(workDate(item.completedAt)!==date){issue(null,date,item.waveNo??item.name,"波次跨日完结，不计入完成产量与时效");continue}
-    const type=types.get(item.type)||types.get("未标注")!;
-    type.waves++;type.orders+=item.orders;type.pieces+=item.pieces;
-    const ms=parts.reduce((sum,p)=>sum+p.ms,0);type.pickMs+=ms;
-    const bad=badItems.has(item.id)||parts.some(p=>issues.some(e=>e.employeeId===p.employeeId&&e.date===p.date));
-    if(ms<=0||bad){type.incomplete=true;issue(null,date,item.waveNo??item.name,"波次工时缺失或存在异常，折算件数与时效待核对");continue}
+    if(date<input.startDate||date>input.endDate){if(parts.length)issue(null,date,item.waveNo??item.name,"跨日期波次不符合统计口径");unclassify(parts);continue}
+    if(item.status!=="completed"||!item.completedAt||Date.parse(item.completedAt)>hi){if(date!==snapshotDate){issue(null,date,item.waveNo??item.name,"历史波次未完结，不计入完成产量与时效");unclassify(parts)}continue}
+    const ms=parts.reduce((sum,p)=>sum+p.ms,0);
+    const bad=badItems.has(item.id)||ms<=0||workDate(item.completedAt)!==date;
+    const type=bad?types.get("未标注")!:types.get(item.type)||types.get("未标注")!;
+    type.waves++;type.orders+=item.orders;type.pieces+=item.pieces;type.pickMs+=ms;
+    if(bad){type.incomplete=true;issue(null,date,item.waveNo??item.name,"波次工时缺失、冲突或跨日，归入未标注，不参与正常时效");unclassify(parts);continue}
     const byEmployee=new Map<number,number>();
     for(const p of parts)byEmployee.set(p.employeeId,(byEmployee.get(p.employeeId)??0)+p.ms);
     for(const [employeeId,duration] of byEmployee){
@@ -147,11 +153,14 @@ export function computeStatistics(input:StatsInput){
   types.get("单件")!.scanMs=scanMs("SINGLE-SCAN");types.get("混件")!.scanMs=scanMs("SCAN");
   for(const type of types.values()){
     const scanned=type.name==="单件"||type.name==="混件";
-    const scanCode=type.name==="单件"?"SINGLE-SCAN":"SCAN";
-    const scanInvalid=scanned&&input.items.some(i=>i.code===scanCode&&badItems.has(i.id));
-    type.pickRate=type.incomplete?null:rate(type.pieces,type.pickMs);
-    type.scanRate=scanned&&!scanInvalid?rate(type.pieces,type.scanMs):null;
-    type.combinedRate=type.incomplete||scanInvalid||(scanned&&type.pieces>0&&type.scanMs===0)?null:rate(type.pieces,type.pickMs+type.scanMs);
+    type.pickRate=type.name==="未标注"?null:rate(type.pieces,type.pickMs);
+    type.scanRate=scanned?rate(type.pieces,type.scanMs):null;
+    type.combinedRate=type.name==="未标注"||(scanned&&type.pieces>0&&type.scanMs===0)?null:rate(type.pieces,type.pickMs+type.scanMs);
+  }
+  // Preserve attendance conservation without assigning ambiguous time to a valid task or standby.
+  for(const day of daily){
+    const ms=Math.max(0,day.onDutyMs-day.workMs-day.standbyMs);
+    if(ms>0){day.projects["未标注"]=ms;projectNames.add("未标注")}
   }
   const people:StatsPerson[]=input.employees.map(e=>{
     const rows=daily.filter(d=>d.employeeId===e.id),projects:Record<string,number>={};
@@ -161,13 +170,11 @@ export function computeStatistics(input:StatsInput){
   }).sort((a,b)=>a.name.localeCompare(b.name,"zh-CN")||a.id-b.id);
   const workDays=new Set(daily.filter(d=>d.onDutyMs>0).map(d=>d.date)).size;
   const projects=[...projectNames,"在岗待命"].map(name=>{
-    const rows=fragments.filter(f=>f.project===name),ms=rows.reduce((n,f)=>n+f.ms,0),count=new Set(rows.map(f=>`${f.employeeId}:${f.date}`)).size;
+    const rows=daily.map(d=>({ms:name==="在岗待命"?d.standbyMs:d.projects[name]??0})).filter(d=>d.ms>0),ms=rows.reduce((n,d)=>n+d.ms,0),count=rows.length;
     return {name,ms,count,dailyAverageMs:workDays?ms/workDays:0,averageMs:count?ms/count:0};
   });
-  for(const person of people)if(person.issues)person.efficiency=null;
-  for(const day of daily)if(issues.some(i=>i.employeeId===day.employeeId&&i.date===day.date))day.efficiency=null;
-  const totalTypes=[...types.values()],pieces=totalTypes.reduce((n,t)=>n+t.pieces,0),pickMs=totalTypes.reduce((n,t)=>n+t.pickMs,0),scanningMs=totalTypes.reduce((n,t)=>n+t.scanMs,0);
-  const totals={calendarDays:(Date.parse(input.endDate)-Date.parse(input.startDate))/86400000+1,workDays:new Set(daily.filter(d=>d.onDutyMs>0).map(d=>d.date)).size,people:people.filter(e=>e.days>0).length,personDays:people.reduce((n,e)=>n+e.days,0),waves:totalTypes.reduce((n,t)=>n+t.waves,0),orders:totalTypes.reduce((n,t)=>n+t.orders,0),pieces,overallEfficiency:rate(pieces,people.reduce((n,e)=>n+e.onDutyMs,0)),onDutyMs:people.reduce((n,e)=>n+e.onDutyMs,0),workMs:people.reduce((n,e)=>n+e.workMs,0),standbyMs:people.reduce((n,e)=>n+e.standbyMs,0),pickRate:totalTypes.some(t=>t.incomplete)?null:rate(pieces,pickMs),combinedRate:totalTypes.some(t=>t.pieces>0&&t.combinedRate===null)?null:rate(pieces,pickMs+scanningMs)};
+  const totalTypes=[...types.values()],validTypes=totalTypes.filter(t=>t.name!=="未标注"),pieces=totalTypes.reduce((n,t)=>n+t.pieces,0),validPieces=validTypes.reduce((n,t)=>n+t.pieces,0),pickMs=validTypes.reduce((n,t)=>n+t.pickMs,0),scanningMs=validTypes.reduce((n,t)=>n+t.scanMs,0);
+  const totals={calendarDays:(Date.parse(input.endDate)-Date.parse(input.startDate))/86400000+1,workDays:new Set(daily.filter(d=>d.onDutyMs>0).map(d=>d.date)).size,people:people.filter(e=>e.days>0).length,personDays:people.reduce((n,e)=>n+e.days,0),waves:totalTypes.reduce((n,t)=>n+t.waves,0),orders:totalTypes.reduce((n,t)=>n+t.orders,0),pieces,overallEfficiency:rate(validPieces,people.reduce((n,e)=>n+e.onDutyMs,0)),onDutyMs:people.reduce((n,e)=>n+e.onDutyMs,0),workMs:people.reduce((n,e)=>n+e.workMs,0),standbyMs:people.reduce((n,e)=>n+e.standbyMs,0),pickRate:rate(validPieces,pickMs),combinedRate:validTypes.some(t=>t.pieces>0&&t.combinedRate===null)?null:rate(validPieces,pickMs+scanningMs)};
   return {startDate:input.startDate,endDate:input.endDate,generatedAt:input.generatedAt,snapshotAt:input.snapshotAt,isSnapshot,people,types:totalTypes,projects,projectNames:[...projectNames],daily,allocations,fragments,issues,totals};
 }
 export type StatisticsResult=ReturnType<typeof computeStatistics>;

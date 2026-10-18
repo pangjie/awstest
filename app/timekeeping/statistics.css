@@ -3,13 +3,13 @@
 
 .stats-overview>div:last-child{border-right:0}
 .stats-table.stats-table-expanded{max-height:none;overflow:visible}
-.stats-project-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,.48fr);gap:18px;align-items:stretch}
+.stats-project-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;align-items:stretch}
 .stats-project-table{min-width:0}.stats-project-table .stats-table{max-height:none;overflow:visible}
-.stats-project-chart{margin:0;padding:18px 20px;background:#fff;border:1px solid #d0dbe5;border-radius:8px;display:flex;flex-direction:column;justify-content:center;gap:16px;min-width:0}
-.stats-pie-content{display:flex;align-items:center;justify-content:center;gap:22px;flex-wrap:wrap}
-.stats-pie{width:clamp(150px,16vw,220px);max-width:100%;aspect-ratio:1;border-radius:50%;flex-shrink:0;box-shadow:0 5px 18px #1e426414;border:3px solid #fff}
+.stats-project-chart{position:relative;margin:0;padding:0;background:#fff;border:1px solid #d0dbe5;border-radius:8px;min-width:0;min-height:0}
+.stats-pie-svg{position:absolute;inset:10px;display:block;width:calc(100% - 20px);height:calc(100% - 20px)}
+.stats-pie-label{font-size:14px;font-weight:600;fill:#344860}.stats-pie-percent{font-size:14px;font-weight:800;fill:#173654;font-variant-numeric:tabular-nums}
 .stats-project-name{display:inline-flex;align-items:center;gap:9px;text-align:left}.stats-project-name i{width:11px;height:11px;flex:0 0 11px;border-radius:3px}
 .stats-project-table .stats-table th:first-child,.stats-project-table .stats-table td:first-child{text-align:left;padding-left:16px}
 .stats-project-table .stats-project-name{white-space:nowrap}
 .stats-project-unclassified{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:10px 0 0;font-size:13px;color:#42566b}
-@media(max-width:760px){.stats-project-layout{grid-template-columns:minmax(0,1fr)}.stats-pie{width:190px}}
+@media(max-width:1100px){.stats-project-layout{grid-template-columns:minmax(0,1fr)}.stats-project-chart{aspect-ratio:640/280}}
