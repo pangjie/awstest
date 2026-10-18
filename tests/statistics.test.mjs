@@ -115,7 +115,8 @@ test("missing scan time never becomes a complete process rate; unknown types rem
 
 test("unfinished historical waves do not contribute completed output",()=>{
   const r=computeStatistics(input({items:[{...item(1,"wave","W1","单件"),status:"active",completedAt:null}],shifts:[shift(1,1,12,18)],sessions:[session(1,1,1,1,12,14)]}));
-  assert.equal(r.totals.pieces,0);assert.equal(r.totals.workMs,2*hour);assert.ok(r.issues.length);
+  assert.equal(r.totals.pieces,0);assert.equal(r.totals.workMs,0);assert.ok(r.issues.length);
+  assert.equal(r.projects.find(p=>p.name==="未标注").ms,2*hour);
 });
 
 test("Excel shares calculation results, contains no employee IDs and preserves numeric durations",async()=>{
@@ -178,6 +179,36 @@ test("project daily averages and participant-days deduplicate resumed sessions",
   assert.equal(sheet.numberFormats[2],"[h]:mm");assert.equal(sheet.numberFormats[4],"0.0%");
   const empty=computeStatistics(input()).projects[0];
   assert.equal(empty.dailyAverageMs,0);assert.equal(empty.averageMs,0);
+});
+
+test("bad waves are isolated while valid waves on the same employee-day retain rates",()=>{
+  const r=computeStatistics(input({items:[item(1,"wave","W1","多件"),item(2,"wave","W2","多件"),item(3)],shifts:[shift(1,1,12,21)],sessions:[session(1,1,1,1,12,14),session(2,1,1,2,15,18),session(3,1,1,3,16,19)]}));
+  const valid=r.types.find(t=>t.name==="多件"),unknown=r.types.find(t=>t.name==="未标注");
+  assert.equal(valid.pieces,300);assert.equal(valid.pickRate,150);assert.equal(valid.combinedRate,150);
+  assert.equal(unknown.pieces,300);assert.equal(unknown.pickRate,null);
+  assert.equal(r.projects.find(p=>p.name==="波次拣货").ms,2*hour);
+  assert.equal(r.projects.find(p=>p.name==="未标注").ms,4*hour);
+  assert.equal(r.projects.reduce((n,p)=>n+p.ms,0),r.totals.onDutyMs);
+  assert.equal(r.people[0].efficiency,150);
+});
+
+test("invalid fixed-task segments do not disable valid scanning rates or become normal project time",()=>{
+  const r=computeStatistics(input({items:[item(1,"wave","W1","单件"),{...item(2,"standard","SINGLE-SCAN"),name:"单件扫描"}],shifts:[shift(1,1,12,20)],sessions:[session(1,1,1,1,12,14),session(2,1,1,2,14,15),session(3,1,1,2,19,21)]}));
+  const single=r.types.find(t=>t.name==="单件");
+  assert.equal(single.pickRate,150);assert.equal(single.scanRate,300);assert.equal(single.combinedRate,100);
+  assert.equal(r.projects.find(p=>p.name==="单件扫描").ms,hour);
+  assert.equal(r.projects.find(p=>p.name==="未标注").ms,hour);
+  assert.equal(r.projects.reduce((n,p)=>n+p.ms,0),r.totals.onDutyMs);
+  assert.equal(statisticsSheets(r).find(s=>s.sheetName==="项目工时").rows.find(row=>row[0]==="未标注")[1],1/24);
+});
+
+test("pie labels stay on one line and the chart cannot increase the desktop table row height",()=>{
+  const chart=readFileSync("app/timekeeping/statistics-pie.tsx","utf8");
+  const css=readFileSync("app/timekeeping/statistics.css","utf8");
+  assert.ok(chart.includes('<tspan>{label} </tspan><tspan className="stats-pie-percent">{display}</tspan>'));
+  assert.doesNotMatch(chart,/dy="19"|\*54/);
+  assert.ok(css.includes(".stats-pie-svg{position:absolute;"));
+  assert.ok(css.includes(".stats-project-chart{position:relative;"));
 });
 
 test("project order is stable and overall efficiency includes standby attendance",()=>{
