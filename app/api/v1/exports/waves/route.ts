@@ -1,3 +1,4 @@
+import { workDate } from "@/lib/timekeeping/time";
 import { randomUUID } from "node:crypto";
 import { getPool } from "@/db";
 import { ExportError,EXPORT_LIMITS,parseExportQuery } from "@/lib/wave-export-contract";
@@ -39,6 +40,7 @@ export async function GET(request:Request){
         await client.query("SET LOCAL statement_timeout='15s'");
         const now=new Date();
         const rows=await readExportWaves(client,range,now);
+        if(request.headers.get("X-Require-Completed-Today")==="1"&&(range.date!==workDate(now)||!rows.length||rows.some(row=>row.status!=="completed")))throw new ExportError(409,"WAVES_NOT_COMPLETED","Today's waves must all be completed before export");
         await client.query("COMMIT");
         deadline();count=rows.length;
         if(Buffer.byteLength(JSON.stringify(rows))>EXPORT_LIMITS.bytes||rows.some(row=>Object.values(row).some(value=>typeof value==="string"&&value.length>32767)||row.helpers.join("、").length>32767))throw new ExportError(422,"FILE_TOO_LARGE","Export data is too large; shorten text fields");

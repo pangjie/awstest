@@ -4,7 +4,8 @@ import {readFileSync} from "node:fs";
 import ExcelJS from "exceljs";
 import {exportLoader} from "./helpers/load-export-typescript.mjs";
 const load=exportLoader();
-const {computeStatistics,statisticsRange}=load("lib/timekeeping/statistics.ts");
+const {computeStatistics,statisticsRange,statisticsProjectColor}=load("lib/timekeeping/statistics.ts");
+const {STANDARD_TASKS}=load("lib/timekeeping/standard-tasks.ts");
 const {statisticsSheets}=load("app/timekeeping/statistics-export.ts");
 const hour=3600000,date="2026-09-01";
 const at=h=>`${date}T${String(h).padStart(2,"0")}:00:00Z`;
@@ -78,6 +79,63 @@ test("attendance, lunch and resumed tasks produce exact standby gaps without dou
   assert.equal(r.fragments.filter(f=>f.standby).length,4);
   assert.equal(r.fragments.some(f=>f.start===at(16)),false);
   assert.equal(r.issues.length,0);
+});
+
+test("putaway and location maintenance count as work, excluding lunch and preserving standby",()=>{
+  const r=computeStatistics(input({
+    items:[{...item(1,"standard","PUTAWAY"),name:"上架"},{...item(2,"standard","LOCATION-MAINTENANCE"),name:"库维"}],
+    shifts:[shift(1,1,12,16),shift(2,1,17,21)],
+    sessions:[session(1,1,1,1,12,14),session(2,1,2,2,17,20)],
+  }));
+  assert.equal(r.totals.onDutyMs,8*hour);assert.equal(r.totals.workMs,5*hour);assert.equal(r.totals.standbyMs,3*hour);
+  assert.equal(r.projects.find(p=>p.name==="上架").ms,2*hour);
+  assert.equal(r.projects.find(p=>p.name==="库维").ms,3*hour);
+  assert.equal(r.projects.find(p=>p.name==="上架").count,1);
+  assert.equal(r.projects.find(p=>p.name==="库维").count,1);
+  assert.equal(r.people[0].projects["上架"],2*hour);assert.equal(r.daily[0].projects["库维"],3*hour);
+  assert.equal(r.fragments.some(f=>Date.parse(f.start)<Date.parse(at(17))&&Date.parse(f.end)>Date.parse(at(16))),false);
+  assert.equal(r.totals.waves,0);assert.equal(r.totals.pickRate,null);assert.equal(r.issues.length,0);
+});
+
+test("new fixed tasks do not change wave picking or single/mixed scanning rates",()=>{
+  const data=input({
+    items:[item(1,"wave","W1","单件"),item(2,"wave","W2","混件"),{...item(3,"standard","SINGLE-SCAN"),name:"单件扫描"},{...item(4,"standard","SCAN"),name:"混件扫描"}],
+    shifts:[shift(1,1,12,22)],
+    sessions:[session(1,1,1,1,12,14),session(2,1,1,3,14,15),session(3,1,1,2,15,17),session(4,1,1,4,17,18)],
+  });
+  const before=computeStatistics(data);
+  const after=computeStatistics({...data,items:[...data.items,{...item(5,"standard","PUTAWAY"),name:"上架"},{...item(6,"standard","LOCATION-MAINTENANCE"),name:"库维"}],sessions:[...data.sessions,session(5,1,1,5,18,19),session(6,1,1,6,19,20)]});
+  assert.deepEqual(after.types,before.types);assert.deepEqual(after.allocations,before.allocations);
+  assert.equal(after.totals.workMs,before.totals.workMs+2*hour);
+  assert.equal(after.totals.standbyMs,before.totals.standbyMs-2*hour);
+  assert.equal(after.totals.pickRate,before.totals.pickRate);assert.equal(after.totals.combinedRate,before.totals.combinedRate);
+  assert.equal(after.totals.overallEfficiency,before.totals.overallEfficiency);
+});
+
+test("historical queries include zero-valued new tasks in every project export and keep named colors",()=>{
+  const r=computeStatistics(input({items:[item(1)],shifts:[shift(1,1,12,18)],sessions:[session(1,1,1,1,12,15)]}));
+  const expected=["波次拣货","单件扫描","混件扫描","问题单","仓务","上架","库维","清洁"];
+  assert.deepEqual(r.projectNames,expected);
+  assert.deepEqual(r.projects.map(p=>p.name),[...expected,"在岗待命"]);
+  for(const name of ["上架","库维"]){
+    const project=r.projects.find(p=>p.name===name);assert.equal(project.ms,0);assert.equal(project.count,0);
+  }
+  const sheets=statisticsSheets(r);
+  const projects=sheets.find(s=>s.sheetName==="项目工时");
+  assert.deepEqual(projects.rows.slice(1).map(row=>row[0]),[...expected,"在岗待命"]);
+  for(const sheet of sheets.filter(s=>["员工汇总","每日汇总"].includes(s.sheetName))){
+    assert.deepEqual(sheet.rows[0].slice(2,2+expected.length),expected);
+    for(const name of ["上架","库维"]){const column=sheet.rows[0].indexOf(name);assert.equal(sheet.rows[1][column],0);assert.equal(sheet.numberFormats[column+1],"[h]:mm")}
+  }
+  for(const task of STANDARD_TASKS)assert.equal(statisticsProjectColor(task.name),task.color);
+  const names=[...expected,"在岗待命","未标注","未归类在岗时间"];
+  assert.equal(new Set(names.map(statisticsProjectColor)).size,names.length);
+  assert.equal(statisticsProjectColor("仓务"),"#4b9b68");
+  assert.equal(statisticsProjectColor("清洁"),"#d57887");
+  const colors=Object.fromEntries(names.map(name=>[name,statisticsProjectColor(name)]));
+  for(const name of names.toReversed())assert.equal(statisticsProjectColor(name),colors[name]);
+  assert.match(readFileSync("app/timekeeping/statistics-pie.tsx","utf8"),/statisticsProjectColor\(p.name\)/);
+  assert.match(readFileSync("app/timekeeping/statistics-page.tsx","utf8"),/statisticsProjectColor\(r.name\)/);
 });
 
 test("single and mixed rates use summed picking plus scanning labor, not average rates",()=>{
@@ -213,7 +271,7 @@ test("pie labels stay on one line and the chart cannot increase the desktop tabl
 
 test("project order is stable and overall efficiency includes standby attendance",()=>{
   const r=computeStatistics(input({items:[item(1,"wave","W1","多件")],shifts:[shift(1,1,12,18)],sessions:[session(1,1,1,1,12,15)]}));
-  assert.deepEqual(r.projects.slice(0,7).map(p=>p.name),["波次拣货","单件扫描","混件扫描","问题单","仓务","清洁","在岗待命"]);
+  assert.deepEqual(r.projects.map(p=>p.name),["波次拣货","单件扫描","混件扫描","问题单","仓务","上架","库维","清洁","在岗待命"]);
   assert.equal(r.totals.overallEfficiency,50);
   assert.equal(r.types.find(t=>t.name==="多件").scanMs,0);
   for(const s of statisticsSheets(r).filter(s=>["员工汇总","每日汇总","个人波次明细"].includes(s.sheetName))){

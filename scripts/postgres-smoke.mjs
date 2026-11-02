@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { STANDARD_TASKS } from "../lib/timekeeping/standard-tasks.ts";
 
 const baseUrl=process.env.SMOKE_BASE_URL??"http://127.0.0.1:3100";
 const username=process.env.SMOKE_ADMIN_USERNAME??process.env.INITIAL_ADMIN_USERNAME??"smoke-admin";
@@ -65,7 +66,7 @@ await request("/api/v1/timekeeping/waves",{
   method:"POST",expected:201,body:{items:[{waveNo:timeWaveNo,channelName:"E2E渠道",channelType:"多件",skuCount:3,orderCount:5,pieceCount:8}]},
 });
 const timeWorkItems=await request("/api/v1/timekeeping/waves");
-assert.equal(timeWorkItems.payload.standardTasks.length,5);
+assert.deepEqual(timeWorkItems.payload.standardTasks.map(item=>item.code),STANDARD_TASKS.map(item=>item.code));
 const timeWave=timeWorkItems.payload.currentWaves.find(item=>item.waveNo===timeWaveNo);
 assert.ok(timeWave);
 const scanId=label=>`e2e-${suffix}-${label}`;
@@ -74,6 +75,14 @@ assert.equal(identified.payload.event,"CLOCK_IN_PENDING");
 const clockedIn=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"ACT-CLOCKIN",employeeId:identified.payload.employeeId,requestId:scanId("in"),terminalId:"e2e"}});
 assert.equal(clockedIn.payload.event,"CLOCK_IN_PROJECT_START");
 assert.equal(clockedIn.payload.snapshot.currentProject.code,"WAREHOUSE");
+for(const code of ["PUTAWAY","LOCATION-MAINTENANCE"]){
+  const task=timeWorkItems.payload.standardTasks.find(item=>item.code===code);
+  assert.ok(task);
+  const input={code:task.barcode,employeeId:identified.payload.employeeId,requestId:scanId(code),terminalId:"e2e"};
+  const started=await request("/api/v1/timekeeping/scan",{method:"POST",body:input});
+  assert.equal(started.payload.snapshot.currentProject.code,code);
+  assert.equal((await request("/api/v1/timekeeping/scan",{method:"POST",body:input})).payload.duplicate,true);
+}
 const fixedWork=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:"JOB-SCAN",employeeId:identified.payload.employeeId,requestId:scanId("fixed"),terminalId:"e2e"}});
 assert.equal(fixedWork.payload.event,"PROJECT_START");
 const waveWork=await request("/api/v1/timekeeping/scan",{method:"POST",body:{code:timeWaveNo,employeeId:identified.payload.employeeId,requestId:scanId("wave"),terminalId:"e2e"}});

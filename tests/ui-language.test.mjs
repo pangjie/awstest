@@ -4,6 +4,7 @@ import { readFile,readdir } from "node:fs/promises";
 import vm from "node:vm";
 import ts from "typescript";
 import * as language from "../lib/ui-language.ts";
+import { STANDARD_TASKS } from "../lib/timekeeping/standard-tasks.ts";
 
 const read=path=>readFile(new URL(`../${path}`,import.meta.url),"utf8");
 const source=await read("app/ui-language.tsx");
@@ -18,6 +19,7 @@ function client({stored,blockedStorage=false}={}){
       if(name==="react")return {useEffect:fn=>effects.push(fn),useSyncExternalStore:(subscribe,snapshot)=>{subscriptions.push(subscribe(()=>{}));return snapshot()}};
       if(name==="react/jsx-runtime")return {jsx:(tag,props)=>({tag,props}),jsxs:(tag,props)=>({tag,props})};
       if(name==="@/lib/ui-language")return language;
+      if(name==="@/lib/timekeeping/standard-tasks")return {STANDARD_TASKS};
       if(name==="./ui-language.css")return {};
       throw new Error(`Unexpected dependency: ${name}`);
     },
@@ -73,10 +75,15 @@ test("saved preference loads after mount; restricted storage does not block swit
 test("task names are translated only for known tasks and durations do not change their values",()=>{
   const app=client();app.render().props.onClick();
   assert.equal(app.api.taskText("仓务","WAREHOUSE"),"Warehouse");
+  assert.equal(app.api.taskText("上架","PUTAWAY"),"Putaway");
+  assert.equal(app.api.taskText("库维 · 已暂停","LOCATION-MAINTENANCE"),"Location maintenance · Paused");
   assert.equal(app.api.taskText("仓务","CUSTOM-TASK"),"仓务");
   assert.equal(app.api.taskText("波次 W000123 · 已暂停"),"Wave W000123 · Paused");
   assert.equal(app.api.durationText("125小时 09分"),"125h 09m");
   assert.equal(app.api.durationText("125:09:01"),"125:09:01");
+  app.render().props.onClick();
+  assert.equal(app.api.taskText("上架"),"Ubicación");
+  assert.equal(app.api.taskText("库维"),"Mantenimiento de ubicaciones");
 });
 
 test("every literal UI translation key exists in all three languages",async()=>{

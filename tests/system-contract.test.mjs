@@ -201,7 +201,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
     assert.match(schema,new RegExp(`"${table}"`),`${table} must be registered in the isolated schema`);
     assert.match(runtime,new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`),`${table} must be created additively`);
   }
-  assert.match(runtime,/TIMEKEEPING_SCHEMA_VERSION=5/);
+  assert.match(runtime,/TIMEKEEPING_SCHEMA_VERSION=6/);
   assert.match(runtime,/ADD COLUMN IF NOT EXISTS employee_code TEXT/);
   assert.match(runtime,/ADD COLUMN IF NOT EXISTS default_work_item_id INTEGER/);
   assert.match(runtime,/FOREIGN KEY \(default_work_item_id\) REFERENCES time_work_items\(id\) ON DELETE SET NULL/);
@@ -209,7 +209,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(schema,/defaultWorkItemId:integer\("default_work_item_id"\)/);
   assert.match(schema,/interruptedAt:utcTimestamp\("interrupted_at"\)/);
   assert.match(runtime,/pg_advisory_lock/);
-  assert.match(runtime,/JOB-SCAN/);
+  assert.match(runtime,/STANDARD_TASKS/);
   assert.doesNotMatch(runtime,/DROP TABLE|DROP COLUMN|TRUNCATE|INSERT INTO time_employees/i);
   assert.doesNotMatch(combined,/D1Database|wrangler|cloudflare|\/工时系统|\/备货管理系统/);
   for(const [path,source] of sources.filter(([path])=>path.includes("/timekeeping/")||path.startsWith("lib/timekeeping/"))) {
@@ -399,7 +399,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(timekeepingCss,/\.time-wave-type > span \{[^}]*inset: 0;[^}]*line-height: 24px;[^}]*text-align: center;/s);
   assert.match(timekeepingCss,/\.time-scan-wave-table td:nth-child\(2\) \.time-wave-type,[^{]*\.time-dashboard-wave-table td:nth-child\(2\) \.time-wave-type \{ margin-inline: auto; \}/s);
   assert.match(timekeepingCss,/\.time-scan-wave-table td:nth-child\(2\) \.time-wave-type > span,[^{]*\.time-dashboard-wave-table td:nth-child\(2\) \.time-wave-type > span \{[^}]*margin-top: 0;[^}]*color: inherit;[^}]*font-size: 12px;/s);
-  assert.match(timekeepingCss,/\.time-task-buttons \{[^}]*repeat\(5,minmax\(0,1fr\)\)/s);
+  assert.match(timekeepingCss,/\.time-task-buttons \{[^}]*repeat\(auto-fit,minmax\(min\(100%,\d+px\),1fr\)\)/s);
   assert.match(timekeepingCss,/\.time-current-employee b \{[^}]*font-size: 32px;[^}]*font-weight: 900;/s);
   assert.match(timekeepingCss,/\.time-task-buttons b \{[^}]*font-size: 17px;/s);
   assert.match(timekeepingCss,/\.time-scan-wave-wrap \{[^}]*height: 917px;[^}]*overflow: auto;/s);
@@ -448,24 +448,24 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.doesNotMatch(dashboardPage,/<Metric label="波次数量"/);
   assert.match(dashboardPage,/<small>\{t\("波次数量"\)\} \{total\}<\/small>/);
   assert.match(dashboardPage,/EmployeeStatusMetric total=\{employeeKpis\.total\} picking=\{employeeKpis\.picking\} warehouse=\{employeeKpis\.warehouse\} standby=\{employeeKpis\.standby\}/);
-  assert.match(dashboardPage,/CompletionMetric orders=\{completionKpis\.orders\} pieces=\{completionKpis\.pieces\} multipleOrders=\{completionKpis\.multipleOrders\} mixedOrders=\{completionKpis\.mixedOrders\}/);
+  assert.match(dashboardPage,/CompletionMetric counts=\{completionKpis\}/);
   for(const label of ["完成情况","单量总数","拣货件数","多件订单","混件订单"])assert.match(dashboardPage,new RegExp(label));
   assert.match(dashboardPage,/item\.status!=="completed"[\s\S]*totals\.orders\+=item\.orderCount;[\s\S]*totals\.pieces\+=item\.pieceCount/);
   assert.match(dashboardPage,/type==="多件"[\s\S]*totals\.multipleOrders\+=item\.orderCount/);
   assert.match(dashboardPage,/type==="混件"[\s\S]*totals\.mixedOrders\+=item\.orderCount/);
-  assert.match(timekeepingCss,/\.time-completion-metric > div \{[^}]*grid-template-columns: 1fr 1fr;/s);
+  assert.match(timekeepingCss,/\.time-completion-metric > div \{[^}]*grid-template-columns: minmax\(0,1fr\);/s);
   assert.match(dashboardPage,/员工统计/);
   assert.match(dashboardPage,/<small>\{t\("员工总数"\)\} \{total\}<\/small>/);
-  for(const label of ["拣货","仓务","待命"])assert.ok(dashboardPage.includes(`<small>{t("${label}")}</small>`));
+  for(const label of ["拣货","其他作业","待命"])assert.ok(dashboardPage.includes(`<small>{t("${label}")}</small>`));
   assert.match(dashboardPage,/employeeKpis:\{total:attendance\.length,picking:pickingEmployees\.size,warehouse:warehouseEmployees\.size,standby\}/);
   assert.match(dashboardPage,/for\(const item of projects\)for\(const person of item\.participants\)if\(person\.active\)pickingEmployees\.add\(person\.employeeId\)/);
-  assert.match(dashboardPage,/task\.code==="SCAN"\|\|task\.code==="SINGLE-SCAN"\?pickingEmployees:warehouseEmployees/);
+  assert.match(dashboardPage,/task\.code==="SCAN"\|\|task\.code==="SINGLE-SCAN"\|\|task\.code==="TODO"\?pickingEmployees:warehouseEmployees/);
   assert.match(dashboardPage,/for\(const employeeId of pickingEmployees\)warehouseEmployees\.delete\(employeeId\)/);
   assert.doesNotMatch(dashboardPage,/const picking=totals\?\.waveActiveCount/);
   assert.match(dashboardPage,/const onDutyMs=attendance\.reduce\(\(sum,employee\)=>sum\+employee\.onDutyMs,0\)\+liveElapsed\*attendance\.filter\(employee=>employee\.clockOut===null\)\.length/);
   assert.match(dashboardPage,/WorkHoursMetric onDutyMs=\{taskTotals\.onDutyMs\} productiveMs=\{taskTotals\.totalMs\}/);
   assert.doesNotMatch(dashboardPage,/人当前计时|人处理波次/);
-  for(const note of ["日期范围内曾 Sign In","正在处理波次、混件扫描或单件扫描"])assert.match(dashboardPage,new RegExp(note));
+  for(const note of ["日期范围内曾 Sign In","正在处理波次、单件扫描、混件扫描或问题单"])assert.match(dashboardPage,new RegExp(note));
   assert.match(dashboardPage,/employee:participantOptions\(projects\)/);
   assert.match(dashboardPage,/employee:"员工"/);
   assert.match(dashboardPage,/!employeeFilterActive\|\|item\.participants\.some\(person=>!filters\.employee\.includes\(String\(person\.employeeId\)\)\)/);
@@ -488,10 +488,8 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(dashboardPage,/className="time-dashboard-main-grid"/);
   assert.doesNotMatch(dashboardPage,/EmployeeStatusList|time-dashboard-employee-stats/);
   assert.match(dashboardPage,/task\.participants\.map\(person=>/);
-  assert.match(dashboardPage,/DailyTaskMetric task=\{task\}/);
-  assert.match(dashboardPage,/const warehouseTask=dailyTasks\.find\(task=>task\.code==="WAREHOUSE"\)/);
-  assert.match(dashboardPage,/<Metric label="波次工时"[\s\S]*\{warehouseTask&&<DailyTaskMetric task=\{warehouseTask\} openScan=\{openScan\}\/\>\}/);
-  assert.match(dashboardPage,/<DailyTaskSummary tasks=\{remainingDailyTasks\} openScan=\{openScan\}\/\>/);
+  assert.match(dashboardPage,/<ProjectHoursSummary projects=\{projects\} tasks=\{dailyTasks\} waveMs=\{taskTotals.waveMs\} openScan=\{openScan\}\/\>/);
+  for(const label of ["项目工时","累计用时","当前人数"])assert.ok(dashboardPage.includes(`t("${label}")`));
   assert.match(dashboardPage,/className="time-daily-people-popover"/);
   assert.match(dashboardPage,/LeadSummary lead=\{lead\} helpers=\{helpers\}/);
   assert.match(dashboardPage,/onClick=\{\(\)=>openScan\(person\.badgeCode\)\}/);
@@ -501,7 +499,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(waveParticipants,/showDuration=\{false\}/);
   assert.doesNotMatch(dashboardPage,/<th>协同<\/th>/);
   assert.match(waveParticipants,/createPortal/);
-  assert.match(dashboardPage,/role="tooltip"/);
+  assert.match(dashboardPage,/<details[\s\S]*?<summary/);
   assert.match(waveParticipants,/onMouseEnter=\{cancelHide\} onMouseLeave=\{hide\}/);
   const dispatchPage=await read("app/timekeeping/scan-page.tsx");
   assert.match(dispatchPage,/import \{ LeadSummary \} from "\.\/wave-participants"/);

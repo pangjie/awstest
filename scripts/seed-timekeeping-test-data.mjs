@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import pg from "pg";
+import { STANDARD_TASKS } from "../lib/timekeeping/standard-tasks.ts";
 
 const {Client}=pg;
 const EMPLOYEE_COUNT=20;
@@ -11,7 +12,7 @@ const TEST_EMPLOYEE_PREFIX="TEST·员工";
 const EMPLOYEE_ALPHABET="34679CFHKMNRVWXY";
 const CHANNELS=["Amazon","Walmart","Temu","TikTok","Wayfair"];
 const WAVE_TYPES=["爆品","单件","多件","混件"];
-const STANDARD_CODES=["SCAN","SINGLE-SCAN","TODO","WAREHOUSE","CLEAN"];
+const STANDARD_CODES=STANDARD_TASKS.map(task=>task.code);
 
 const client=new Client(connectionConfig());
 await client.connect();
@@ -122,7 +123,12 @@ function connectionConfig(){
 }
 
 function required(name){const value=process.env[name];if(!value)throw new Error(`${name} is required`);return value}
-async function assertSchema(){const result=await client.query("SELECT to_regclass('time_employees') AS employees,to_regclass('time_work_items') AS work_items,to_regclass('time_shifts') AS shifts,to_regclass('time_work_session_edits') AS session_edits");if(!result.rows[0].employees||!result.rows[0].work_items||!result.rows[0].shifts||!result.rows[0].session_edits)throw new Error("工时数据表尚未升级，请先启动本地网站并打开任一工时页面")}
+async function assertSchema(){
+  const result=await client.query("SELECT to_regclass('time_employees') AS employees,to_regclass('time_work_items') AS work_items,to_regclass('time_shifts') AS shifts,to_regclass('time_work_session_edits') AS session_edits");
+  if(!result.rows[0].employees||!result.rows[0].work_items||!result.rows[0].shifts||!result.rows[0].session_edits)throw new Error("工时数据表尚未升级，请先启动本地网站并打开任一工时页面");
+  const existing=new Set((await client.query("SELECT code FROM time_work_items WHERE work_type='standard' AND status='active'")).rows.map(row=>row.code));
+  if(STANDARD_CODES.some(code=>!existing.has(code)))throw new Error("固定任务尚未升级或已停用，请先启动新版网站并确认固定任务均已启用");
+}
 
 function generateBadge(name,type,taken,length){for(let attempt=0;attempt<4096;attempt++){const digest=createHash("sha256").update(`${type}\0${name}\0${attempt}`).digest();const badge=Array.from(digest.subarray(0,length),value=>EMPLOYEE_ALPHABET[value&15]).join("");if(!taken.has(badge))return badge}throw new Error("无法分配测试员工 ID")}
 function addDays(date,amount){const value=new Date(`${date}T12:00:00Z`);value.setUTCDate(value.getUTCDate()+amount);return value.toISOString().slice(0,10)}

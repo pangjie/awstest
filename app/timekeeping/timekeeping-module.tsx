@@ -16,7 +16,7 @@ export default function TimekeepingModule({statistics,setStatistics,page,titleTa
     case "time-statistics":return <StatisticsPage titleTarget={titleTarget} result={statistics} setResult={setStatistics}/>;
     case "time-scan":return <ScanPage titleTarget={titleTarget} initialBadge={initialScanBadge} sortState={scanSort} setSortState={setScanSort}/>;
     case "time-card-scan":return <CardScanPage portableDevice={portableDevice}/>;
-    case "time-dashboard":return <DashboardPage date={dashboardDate} exportStartDate={dashboardExportStartDate} exportEndDate={dashboardExportEndDate} filters={dashboardFilters} setFilters={setDashboardFilters} sortState={dashboardSort} setSortState={setDashboardSort} exportKey={dashboardExportKey} importOpen={dashboardImportOpen} closeImport={closeDashboardImport} openScan={openScan}/>;
+    case "time-dashboard":return <DashboardPage titleTarget={titleTarget} date={dashboardDate} exportStartDate={dashboardExportStartDate} exportEndDate={dashboardExportEndDate} filters={dashboardFilters} setFilters={setDashboardFilters} sortState={dashboardSort} setSortState={setDashboardSort} exportKey={dashboardExportKey} importOpen={dashboardImportOpen} closeImport={closeDashboardImport} openScan={openScan}/>;
     case "time-records":return <RecordsPage titleTarget={titleTarget} isAdmin={isAdmin} initialBadge={initialRecordBadge}/>;
     case "time-employees":return <EmployeesPage titleTarget={titleTarget} isAdmin={isAdmin} openScan={openScan} openRecords={openRecords} sortState={employeeSort} setSortState={setEmployeeSort}/>;
   }

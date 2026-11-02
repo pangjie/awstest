@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
-import { statusClock,employeeStatus,sortStatusEmployees,EMPLOYEE_STATUS_LABELS,employeeTaskStyle } from "../lib/employee-status.ts";
+import { exportLoader } from "./helpers/load-export-typescript.mjs";
+const { employeeElapsedMs,statusClock,employeeStatus,sortStatusEmployees,EMPLOYEE_STATUS_LABELS,employeeTaskStyle } = exportLoader()("lib/employee-status.ts");
 import { effectivePagePermissions,canAccessAnyPage } from "../lib/page-permissions.ts";
 
 test("employee board uses New York 07:00 inclusive to 22:00 exclusive in summer and winter",()=>{
@@ -21,6 +22,10 @@ test("employee card state respects attendance, paused tasks and scanning classif
   assert.equal(employeeStatus(true,true,true,"wave","W1"),"picking");
   for(const code of ["JOB-SCAN","JOB-SINGLE-SCAN"])assert.equal(employeeStatus(true,true,true,"standard",code),"picking");
   assert.equal(employeeStatus(true,true,true,"standard","JOB-CLEAN"),"warehouse");
+  for(const code of ["JOB-PUTAWAY","JOB-LOCATION-MAINTENANCE"]){
+    assert.equal(employeeStatus(true,true,true,"standard",code),"warehouse");
+    assert.equal(employeeStatus(false,true,false,"standard",code),"off");
+  }
 });
 
 test("employee cards show four bilingual labels without changing task classification",()=>{
@@ -40,7 +45,7 @@ test("employee card order is stable across state changes and duplicate names",()
 });
 
 test("badge artwork distinguishes task types and keeps paused tasks recognizable",()=>{
-  for(const [task,kind] of [["仓务","warehouse"],["波次 W123","wave"],["混件扫描","scan"],["单件扫描","scan"],["问题单","issue"],["清洁","clean"],["新增任务","other"]]){
+  for(const [task,kind] of [["仓务","warehouse"],["上架","putaway"],["库维","maintenance"],["波次 W123","wave"],["混件扫描","scan"],["单件扫描","scan"],["问题单","issue"],["清洁","clean"],["新增任务","other"]]){
     assert.equal(employeeTaskStyle({id:1,name:"员工",state:"warehouse",task}),kind);
     assert.equal(employeeTaskStyle({id:1,name:"员工",state:"off",task:task+" · 已暂停"}),kind);
   }
@@ -57,4 +62,11 @@ test("employee status is separately granted and the endpoint is read only",async
   assert.doesNotMatch(api,/export async function (POST|PUT|PATCH|DELETE)|reconcileStaleOpenShifts|badge_code|employee_code/);
   const revision=await readFile(new URL("../app/api/v1/timekeeping/revision/route.ts",import.meta.url),"utf8");
   assert.match(revision,/get\("scope"\)==="employee-status"\s*\?await authorizePageAccess\("time-status"\)/);
+});
+
+test("employee timers continue work and standby locally, and freeze paused tasks",()=>{
+  const generatedAt="2026-11-02T15:00:00Z",now=Date.parse(generatedAt)+5_000;
+  for(const state of ["picking","warehouse","ready"])assert.equal(employeeElapsedMs({state,elapsedMs:60_000},generatedAt,now),65_000);
+  for(const state of ["off","not_started"])assert.equal(employeeElapsedMs({state,elapsedMs:60_000},generatedAt,now),60_000);
+  assert.equal(employeeElapsedMs({state:"ready",elapsedMs:60_000},generatedAt,Date.parse(generatedAt)-1000),60_000);
 });

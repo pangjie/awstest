@@ -7,7 +7,7 @@ import { fetchWithTimeout } from "@/lib/client-fetch";
 import { workDate } from "@/lib/timekeeping/time";
 import { isValidEmployeeId } from "@/lib/timekeeping/employee-id";
 import { timeApi } from "./api";
-import { formatClock, formatClockWithSeconds, formatDurationWithSeconds, stateLabel } from "./format";
+import { formatClock, formatClockWithSeconds, formatDurationWithSeconds, stateLabel, waveHourlyPieces } from "./format";
 import type { EmployeeSnapshot, ScanWaveSortKey, ScanWaveSortState, ScanResponse, WorkItem, WorkItemsResponse } from "./types";
 import { channelLabel, waveTypeInfo, WaveChannelTag, WaveTypeTag } from "./wave-display";
 import { LeadSummary } from "./wave-participants";
@@ -185,11 +185,12 @@ function ScanWaveTable({elapsed,items,sortState,setSortState,currentProjectId,se
     return <th aria-sort={active?(sortState.descending?"descending":"ascending"):"none"} data-ui-size=""><button type="button" className="time-sort" aria-label={t("按{0}排序", {0: t(label)})} onClick={()=>changeSort(key)} data-ui-size=""><span>{t(label)}</span><i aria-hidden="true">{active?(sortState.descending?"↓":"↑"):"↕"}</i></button></th>;
   };
   const orderedItems=sortState.key==="default"?items:[...items].sort((left,right)=>{
-    const a=scanWaveSortValue(left,sortState.key),b=scanWaveSortValue(right,sortState.key);
+    const a=scanWaveSortValue(left,sortState.key,elapsed),b=scanWaveSortValue(right,sortState.key,elapsed);
+    if(a===null||b===null)return a===b?0:a===null?1:-1;
     const result=typeof a==="number"&&typeof b==="number"?a-b:String(a).localeCompare(String(b),"zh-CN",{numeric:true,sensitivity:"base"});
     return sortState.descending?-result:result;
   });
-  return <div className="time-table-wrap time-scan-wave-wrap"><table className="time-table time-scan-wave-table"><thead><tr>{sortHead("channel","渠道")}{sortHead("type","类型")}{sortHead("waveNo","波次号")}{sortHead("state","状态")}<th>SKU</th><th data-ui-size="">{t("订单")}</th><th data-ui-size="">{t("件数")}</th><th data-ui-size="">{t("负责人")}</th>{sortHead("duration","波次工时")}</tr></thead><tbody>{orderedItems.map(item=>{const lead=item.participants.find(person=>person.role==="lead");const state=scanWaveState(item);const classes=[item.id===currentProjectId?"current":"",item.id===selectedProjectId?"selected":"",item.interruptedAt?"interrupted":""].filter(Boolean).join(" ");return <tr key={item.id} className={classes||undefined}><td><WaveChannelTag value={item.channelName}/></td><td><WaveTypeTag value={item.channelType}/></td><td><button type="button" className="time-scan-wave-select" disabled={disabled} onClick={()=>selectItem(item)}>{item.waveNo??item.code}</button></td><td><span className={`time-state ${item.interruptedAt?"interrupted":item.activeCount?"working":item.startedAt?"off":"ready"}`}>{t(state)}</span></td><td>{item.skuCount}</td><td>{item.orderCount}</td><td>{item.pieceCount}</td><td><LeadSummary lead={lead} helpers={item.participants.filter(person=>person.role==="helper").map(person=>({...person,totalMs:person.totalMs+(person.active?elapsed:0)}))} openScan={openScan}/></td><td><b>{formatDurationWithSeconds(item.totalMs+elapsed*item.activeCount)}</b></td></tr>})}</tbody></table></div>;
+  return <div className="time-table-wrap time-scan-wave-wrap"><table className="time-table time-scan-wave-table"><thead><tr>{sortHead("channel","渠道")}{sortHead("type","类型")}{sortHead("waveNo","波次号")}{sortHead("state","状态")}<th>SKU</th><th data-ui-size="">{t("订单")}</th><th data-ui-size="">{t("件数")}</th><th data-ui-size="">{t("负责人")}</th>{sortHead("duration","波次工时")}{sortHead("efficiency","时效")}</tr></thead><tbody>{orderedItems.map(item=>{const totalMs=item.totalMs+elapsed*item.activeCount;const lead=item.participants.find(person=>person.role==="lead");const state=scanWaveState(item);const classes=[item.id===currentProjectId?"current":"",item.id===selectedProjectId?"selected":"",item.interruptedAt?"interrupted":""].filter(Boolean).join(" ");return <tr key={item.id} className={classes||undefined}><td><WaveChannelTag value={item.channelName}/></td><td><WaveTypeTag value={item.channelType}/></td><td><button type="button" className="time-scan-wave-select" disabled={disabled} onClick={()=>selectItem(item)}>{item.waveNo??item.code}</button></td><td><span className={`time-state ${item.interruptedAt?"interrupted":item.activeCount?"working":item.startedAt?"off":"ready"}`}>{t(state)}</span></td><td>{item.skuCount}</td><td>{item.orderCount}</td><td>{item.pieceCount}</td><td><LeadSummary lead={lead} helpers={item.participants.filter(person=>person.role==="helper").map(person=>({...person,totalMs:person.totalMs+(person.active?elapsed:0)}))} openScan={openScan}/></td><td><b>{formatDurationWithSeconds(totalMs)}</b></td><td><b>{waveHourlyPieces({...item,totalMs})??"—"}</b></td></tr>})}</tbody></table></div>;
 }
 
 function scanWaveState(item:WorkItem){return item.interruptedAt?"中断":item.activeCount?"进行中":item.startedAt?"暂停":"未开始"}
@@ -198,13 +199,14 @@ function selectionContext(snapshot:EmployeeSnapshot){
   return JSON.stringify([snapshot.employee.id,snapshot.state,snapshot.shift?.id,snapshot.currentProject?.id,snapshot.currentProject?.status,snapshot.currentProject?.assignmentRole]);
 }
 
-function scanWaveSortValue(item:WorkItem,key:ScanWaveSortKey):string|number{
+function scanWaveSortValue(item:WorkItem,key:ScanWaveSortKey,elapsed:number):string|number|null{
   switch(key){
     case "channel":return channelLabel(item.channelName);
     case "type":return waveTypeInfo(item.channelType).label;
     case "waveNo":return item.waveNo??item.code;
     case "state":return scanWaveState(item);
-    case "duration":return item.totalMs;
+    case "duration":return item.totalMs+elapsed*item.activeCount;
+    case "efficiency":return waveHourlyPieces({...item,totalMs:item.totalMs+elapsed*item.activeCount});
     case "default":return item.sortOrder;
   }
 }

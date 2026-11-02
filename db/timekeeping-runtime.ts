@@ -1,8 +1,9 @@
 import { getPool } from "./index";
 import { generateEmployeeId } from "../lib/timekeeping/employee-id";
+import { STANDARD_TASKS } from "../lib/timekeeping/standard-tasks";
 
 let initialization:Promise<void>|null=null;
-const TIMEKEEPING_SCHEMA_VERSION=5;
+const TIMEKEEPING_SCHEMA_VERSION=6;
 const SCHEMA_LOCK="neiku-timekeeping-schema";
 
 export function ensureTimekeepingSchema(){
@@ -153,19 +154,12 @@ async function initialize(){
       await client.query("UPDATE time_employees SET employee_code=$1 WHERE id=$2 AND employee_code IS NULL",[employeeCode,employee.id]);
       takenEmployeeCodes.add(employeeCode);
     }
-    const standards=[
-      ["JOB-SCAN","SCAN","混件扫描",1],
-      ["JOB-SINGLE-SCAN","SINGLE-SCAN","单件扫描",2],
-      ["JOB-TODO","TODO","问题单",3],
-      ["JOB-WAREHOUSE","WAREHOUSE","仓务",4],
-      ["JOB-CLEAN","CLEAN","清洁",5],
-    ];
-    for(const [barcode,code,name,sortOrder] of standards){
+    for(const [index,{barcode,code,name}] of STANDARD_TASKS.entries()){
       await client.query(`INSERT INTO time_work_items
         (barcode,code,name,client,work_type,sort_order,status,created_at)
         VALUES ($1,$2,$3,'内部','standard',$4,'active',CURRENT_TIMESTAMP)
         ON CONFLICT(barcode) DO UPDATE SET code=EXCLUDED.code,name=EXCLUDED.name,sort_order=EXCLUDED.sort_order`,
-      [barcode,code,name,sortOrder]);
+      [barcode,code,name,index+1]);
     }
     await client.query(`INSERT INTO time_runtime_schema_state(id,version,updated_at)
       VALUES(1,$1,CURRENT_TIMESTAMP)
