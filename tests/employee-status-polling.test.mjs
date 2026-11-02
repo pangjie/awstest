@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import ts from "typescript";
-import * as model from "../lib/employee-status.ts";
+import { exportLoader } from "./helpers/load-export-typescript.mjs";
+const model=exportLoader()("lib/employee-status.ts");
 
 const source=await readFile(new URL("../app/employee-status/status-board.tsx",import.meta.url),"utf8");
 const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
@@ -24,6 +25,8 @@ async function board(start,employees=[],useFetchWrapper=false){
       if(name==="react")return {useState:value=>{const index=states.length;states.push(value);return [value,next=>{states[index]=next;updates.push(next)}]},useEffect:fn=>effect=fn};
       if(name==="react/jsx-runtime")return {jsx:()=>null,jsxs:()=>null};
       if(name==="@/lib/employee-status")return model;
+      if(name==="@/lib/timekeeping/standard-tasks")return exportLoader()("lib/timekeeping/standard-tasks.ts");
+      if(name==="@/app/timekeeping/format")return exportLoader()("app/timekeeping/format.ts");
       if(name==="@/app/ui-language")return {useLanguage:()=>({language:"zh"}),t:(source,values={})=>source.replace(/\{(\d+)\}/g,(token,key)=>key in values?String(values[key]):token)};
       if(name==="@/lib/client-fetch")return {fetchWithTimeout};
       throw new Error(name);
@@ -53,35 +56,74 @@ test("status polling reads once outside hours and resumes at 07:00 without reloa
 });
 
 test("completed requests are not aborted when the board unmounts",async()=>{
-  const app=await board("2026-09-29T15:00:00Z");
+  const app=await board("2026-09-29T15:00:00Z",[],true);
   app.cleanup();
   assert.equal(app.requests[0].options.signal.aborted,false);
 });
 
-for(const useFetchWrapper of [false,true])test(`in-flight cancellation is quiet and visibility resumes (fetch wrapper: ${useFetchWrapper})`,async()=>{
+for(const useFetchWrapper of [false,true])test(`hidden and unmounted reads settle quietly without aborting (fetch wrapper: ${useFetchWrapper})`,async()=>{
   const app=await board("2026-09-29T15:00:00Z",[],useFetchWrapper);
   try{
-    app.setRespond((_url,{signal})=>new Promise((_resolve,reject)=>{
-      signal.addEventListener("abort",()=>reject(signal.reason),{once:true});
-    }));
+    let resolve;
+    app.setRespond(()=>new Promise(done=>resolve=done));
     await app.advance(1000);
     await app.visible(false);
-    assert.equal(app.requests.at(-1).options.signal.aborted,true);
+    assert.notEqual(app.requests.at(-1).options.signal?.aborted,true);
     assert.ok(!app.updates.includes("连接异常，数据可能已过期"));
     await app.advance(5000);
+    assert.equal(app.requests.length,2);
+    const hiddenUpdates=app.updates.length;
+    resolve(app.response(200));await app.advance(0);
+    assert.equal(app.updates.length,hiddenUpdates);
     assert.equal(app.requests.length,2);
     app.setRespond(async()=>app.response(200));
     await app.visible(true);
     assert.ok(app.requests.at(-1).url.endsWith("employee-status"));
-    app.setRespond((_url,{signal})=>new Promise((_resolve,reject)=>{
-      signal.addEventListener("abort",()=>reject(signal.reason),{once:true});
-    }));
+    app.setRespond(()=>new Promise(done=>resolve=done));
     await app.advance(1000);
     app.cleanup();
+    assert.notEqual(app.requests.at(-1).options.signal?.aborted,true);
     const updateCount=app.updates.length,requestCount=app.requests.length;
+    resolve(app.response(200));
     await app.advance(30000);
     assert.equal(app.updates.length,updateCount);
     assert.equal(app.requests.length,requestCount);
+  }finally{app.cleanup()}
+});
+
+test("a hidden request cannot overwrite a resumed page or start another snapshot read",async()=>{
+  const app=await board("2026-09-29T15:00:00Z",[],true);
+  try{
+    let resolve;
+    app.setRespond(()=>new Promise(done=>resolve=done));
+    await app.advance(1000);await app.visible(false);await app.visible(true);
+    assert.equal(app.requests.length,2);
+    const updateCount=app.updates.length;
+    resolve(app.response(200));await app.advance(0);
+    assert.equal(app.updates.length,updateCount);
+    assert.equal(app.requests.length,2);
+    app.setRespond(async()=>app.response(200));await app.advance(1000);
+    assert.equal(app.requests.length,3);
+    assert.ok(app.requests[2].url.endsWith("employee-status"));
+  }finally{app.cleanup()}
+});
+
+for(const event of ["hide","unmount"])for(const failBody of [false,true])test(`late response body is ignored after ${event} (rejects: ${failBody})`,async()=>{
+  const app=await board("2026-09-29T15:00:00Z",[],true);
+  try{
+    let resolve,reject;
+    app.setRespond(async url=>url.includes("revision")?app.response(200):{
+      status:200,ok:true,json:()=>new Promise((done,fail)=>{resolve=done;reject=fail}),
+    });
+    await app.advance(1000);
+    assert.equal(typeof resolve,"function");
+    if(event==="hide"){await app.visible(false);await app.visible(true)}else app.cleanup();
+    const updateCount=app.updates.length;
+    if(failBody)reject(new DOMException("The operation was aborted","AbortError"));
+    else resolve(await app.response(200).json());
+    await app.advance(0);
+    assert.equal(app.updates.length,updateCount);
+    assert.ok(!app.updates.includes("连接异常，数据可能已过期"));
   }finally{app.cleanup()}
 });
 
@@ -134,7 +176,7 @@ test("card highlights only state or task changes, restarts per employee and supp
   }finally{app.cleanup()}
 });
 
-test("the next poll starts a new flip after the 750ms animation has finished",async()=>{
+test("the next poll starts a new flip after the 420ms animation has finished",async()=>{
   const employee={id:1,name:"张三",state:"ready",task:null};
   const app=await board("2026-09-29T15:00:00Z",[employee]);
   try{
@@ -148,10 +190,26 @@ test("the next poll starts a new flip after the 750ms animation has finished",as
   }finally{app.cleanup()}
 });
 
-test("card rotation takes 750ms with no intermediate easing stops",async()=>{
+test("a running flip accepts its latest destination until the 420ms boundary",async()=>{
+  const employee={id:1,name:"张三",state:"ready",task:null};
+  const app=await board("2026-09-29T15:00:00Z",[employee]);
+  try{
+    app.setRespond(async()=>app.response(200,[{...employee,state:"picking",task:"波次 A"}]));await app.advance(1000);
+    const flip=app.changes[1];
+    await app.advance(419);
+    app.setRespond(async()=>app.response(200,[{...employee,state:"off",task:"波次 A · 已暂停"}]));await app.visible(true);
+    assert.equal(app.changes[1],flip);
+    assert.equal(app.updates.filter(value=>value?.employees).at(-1).employees[0].state,"off");
+    await app.advance(1);
+    app.setRespond(async()=>app.response(200,[employee]));await app.visible(true);
+    assert.ok(app.changes[1].sequence>flip.sequence);
+    assert.equal(app.changes[1].previous.state,"off");
+  }finally{app.cleanup()}
+});
+
+test("card rotation takes 420ms with no intermediate easing stops",async()=>{
   const css=await readFile(new URL("../app/employee-status/status-board.css",import.meta.url),"utf8");
-  assert.match(css,/employee-card-turn \.75s cubic-bezier/);
-  assert.match(css,/employee-card-lift \.75s/);
+  assert.match(css,/employee-card-turn \.42s cubic-bezier/);
   const turn=css.split("@keyframes employee-card-turn {")[1].split("\n}")[0];
   assert.equal((turn.match(/rotateY\(/g)||[]).length,2);
   assert.match(turn,/0% \{ transform: rotateY\(0deg\)/);

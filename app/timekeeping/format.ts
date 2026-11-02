@@ -5,3 +5,5 @@ export function formatClockWithSeconds(value:string|null|undefined){return value
 export function dateKey(value:string|Date=new Date()){const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(value instanceof Date?value:new Date(value));const part=(type:Intl.DateTimeFormatPartTypes)=>parts.find(item=>item.type===type)?.value??"";return `${part("year")}-${part("month")}-${part("day")}`}
 export function currentDate(){return dateKey()}
 export function stateLabel(value:string){return ({inactive:"已停用",not_started:"未上班",off:"已下班",ready:"在岗待命",working:"工作中"} as Record<string,string>)[value]??value}
+
+export function waveHourlyPieces(item:{pieceCount:number;totalMs:number}){return item.totalMs>0?Math.round(item.pieceCount*3_600_000/item.totalMs):null}

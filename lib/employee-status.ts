@@ -1,5 +1,7 @@
+import { STANDARD_TASKS } from "./timekeeping/standard-tasks";
+
 export type EmployeeStatus="picking"|"warehouse"|"ready"|"off"|"not_started";
-export type StatusEmployee={id:number;name:string;state:EmployeeStatus;task:string|null};
+export type StatusEmployee={id:number;name:string;state:EmployeeStatus;task:string|null;taskCode?:string|null;elapsedMs?:number};
 export type StatusSnapshot={revision:number;date:string;generatedAt:string;employees:StatusEmployee[]};
 export const EMPLOYEE_STATUS_LABELS:Record<EmployeeStatus,string>={
   picking:"在岗 / Trabajando",
@@ -12,11 +14,7 @@ export const EMPLOYEE_STATUS_LABELS:Record<EmployeeStatus,string>={
 export function employeeTaskStyle(employee:StatusEmployee){
   const task=employee.task?.replace(/ · 已暂停$/,"")??"";
   if(task.startsWith("波次 "))return "wave";
-  if(task==="仓务")return "warehouse";
-  if(task==="混件扫描"||task==="单件扫描")return "scan";
-  if(task==="问题单")return "issue";
-  if(task==="清洁")return "clean";
-  return task?"other":"idle";
+  return STANDARD_TASKS.find(item=>item.name===task)?.icon??(task?"other":"idle");
 }
 
 const displayTime=new Intl.DateTimeFormat("sv-SE",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"});
@@ -35,4 +33,9 @@ export function employeeStatus(onDuty:boolean,hasAttendance:boolean,taskActive:b
 
 export function sortStatusEmployees(employees:StatusEmployee[]){
   return employees.sort((a,b)=>a.name.localeCompare(b.name,"zh-CN")||a.id-b.id);
+}
+
+export function employeeElapsedMs(employee:StatusEmployee,generatedAt:string,now:number){
+  const running=employee.state==="picking"||employee.state==="warehouse"||employee.state==="ready";
+  return (employee.elapsedMs??0)+(running?Math.max(0,now-Date.parse(generatedAt)):0);
 }

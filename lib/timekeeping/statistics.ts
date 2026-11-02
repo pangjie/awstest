@@ -1,4 +1,12 @@
 import { addDays, localDateTimeToIso, workDate } from "./time";
+import { STANDARD_TASKS } from "./standard-tasks";
+
+const defaultProjectNames=["波次拣货",...STANDARD_TASKS.toSorted((a,b)=>a.statisticsOrder-b.statisticsOrder).map(task=>task.name)];
+const projectColors:Record<string,string>={
+  ...Object.fromEntries(STANDARD_TASKS.map(task=>[task.name,task.color])),
+  "波次拣货":"#3976d5","在岗待命":"#99a8bc","未标注":"#b6a591","未归类在岗时间":"#d4dce6",
+};
+export const statisticsProjectColor=(name:string)=>projectColors[name]??"#7b8794";
 
 export type StatsEmployee={id:number;name:string;organization:string;active:boolean};
 export type StatsShift={id:number;employeeId:number;date:string;start:string;end:string|null;modified:boolean};
@@ -82,7 +90,7 @@ export function computeStatistics(input:StatsInput){
     getDay(session.employeeId,date).sessions.push({interval:[start,end],session,item,modified:session.modified||shift.modified});
   }
   const daily:Array<{employeeId:number;date:string;onDutyMs:number;workMs:number;standbyMs:number;projects:Record<string,number>;pieces:number;waveMs:number;efficiency:number|null}>=[];
-  const projectNames=new Set<string>(["波次拣货","单件扫描","混件扫描","问题单","仓务","清洁"]);
+  const projectNames=new Set<string>(defaultProjectNames);
   for(const item of input.items)if(item.kind==="standard")projectNames.add(item.name);
   for(const day of days.values()){
     const attendance=union(day.attendance);

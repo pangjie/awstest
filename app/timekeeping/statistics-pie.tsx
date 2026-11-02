@@ -1,15 +1,12 @@
 "use client";
 
 import { t } from "@/app/ui-language";
-import type { StatisticsResult } from "@/lib/timekeeping/statistics";
-
-const colors=["#3976d5","#21a6a1","#8863c9","#e6a23b","#4b9b68","#d57887","#99a8bc"];
-export const projectColor=(index:number)=>colors[index%colors.length];
+import { statisticsProjectColor, type StatisticsResult } from "@/lib/timekeeping/statistics";
 
 export default function StatisticsPie({projects,total}:{projects:StatisticsResult["projects"];total:number}){
-  const entries=projects.map((p,i)=>({name:p.name,ms:p.ms,color:projectColor(i)}));
+  const entries=projects.map(p=>({name:p.name,ms:p.ms,color:statisticsProjectColor(p.name)}));
   const remainder=Math.max(0,total-entries.reduce((sum,p)=>sum+p.ms,0));
-  if(remainder>0)entries.push({name:"未归类在岗时间",ms:remainder,color:"#d4dce6"});
+  if(remainder>0)entries.push({name:"未归类在岗时间",ms:remainder,color:statisticsProjectColor("未归类在岗时间")});
   const visible=entries.filter(p=>p.ms>0&&total>0);
   const slices=visible.map((p,index)=>{
     const start=-Math.PI/2+visible.slice(0,index).reduce((sum,item)=>sum+item.ms,0)/total*Math.PI*2,sweep=p.ms/total*Math.PI*2;

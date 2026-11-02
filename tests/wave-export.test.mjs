@@ -59,3 +59,25 @@ test("interrupted Excel generation closes its writer and rejects instead of retu
   const {buildWaveWorkbook,exportMetadata}=load("lib/wave-export-workbook.ts");
   await assert.rejects(()=>buildWaveWorkbook([{}],exportMetadata(query(),new Date().toISOString(),1),()=>{throw new Error("deadline")}),/deadline/);
 });
+
+test("today button export requires nonempty completed waves; ordinary date links remain available",async()=>{
+  const {workDate}=load("lib/timekeeping/time.ts");
+  const today=workDate();
+  for(const [rows,guard,date,expected] of [
+    [[],true,today,409],[[{status:"unstarted",helpers:[]}],true,today,409],
+    [[{status:"completed",helpers:[]}],true,today,200],
+    [[{status:"completed",helpers:[]}],true,"2020-01-01",409],
+    [[{status:"working",helpers:[]}],false,today,200],
+  ]){
+    let built=false;
+    const client={query:async()=>({rows:[{acquired:true}]}),release(){}};
+    const route=exportLoader({
+      "@/db":{getPool:()=>({connect:async()=>client})},
+      "@/lib/wave-export-quota":{ensureExportQuotaSchema:async()=>{},consumeQuota:async()=>({siteRemaining:99,resetAt:"tomorrow"})},
+      "@/lib/wave-export-data":{readExportWaves:async()=>rows},
+      "@/lib/wave-export-workbook":{exportMetadata:()=>({}),buildWaveWorkbook:async()=>{built=true;return new Uint8Array([1])}},
+    })("app/api/v1/exports/waves/route.ts");
+    const response=await route.GET(new Request(`http://localhost/api/v1/exports/waves?date=${date}`,{headers:guard?{"X-Require-Completed-Today":"1"}:{}}));
+    assert.equal(response.status,expected);assert.equal(built,expected===200);
+  }
+});

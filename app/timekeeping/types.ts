@@ -22,7 +22,7 @@ export type DashboardFilterKey="channel"|"type"|"state"|"employee";
 export type DashboardFilters=Record<DashboardFilterKey,string[]>;
 export type DashboardSortKey="default"|"duration"|"efficiency";
 export type DashboardSortState={key:DashboardSortKey;descending:boolean};
-export type ScanWaveSortKey="default"|"channel"|"type"|"waveNo"|"state"|"duration";
+export type ScanWaveSortKey="default"|"channel"|"type"|"waveNo"|"state"|"duration"|"efficiency";
 export type ScanWaveSortState={key:ScanWaveSortKey;descending:boolean};
 
 export type ScanResponse={ok:boolean;event:string;message:string;tone:"success"|"info"|"warning"|"error";duplicate?:boolean;employeeId?:number;snapshot?:EmployeeSnapshot;contextExpiresAt?:number};
@@ -34,6 +34,7 @@ export type CardScanEmployeeResponse={
 };
 
 export type DashboardResponse={
+  todayExport?:{date:string;ready:boolean};
   ok:true;date:string;range:{id:"custom";label:string;startDate:string;endDate:string;start:string;end:string};revision:number;generatedAt:string;timeZone:string;filterUniverse:{channels:string[]};
   attendance:Array<{employeeId:number;name:string;type:string;clockIn:string|null;clockOut:string|null;onDutyMs:number;productiveMs:number;offDutyMs:number;state:string;currentProject:{code:string;name:string}|null}>;
   taskTotals:{totalMs:number;waveMs:number;scanMs:number;otherMs:number;activeCount:number;waveActiveCount:number;scanActiveCount:number;otherActiveCount:number};

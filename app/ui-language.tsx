@@ -2,6 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { isLanguage, LANGUAGES, LANGUAGE_STORAGE_KEY, translate, type Language } from "@/lib/ui-language";
+import { STANDARD_TASKS } from "@/lib/timekeeping/standard-tasks";
 import "./ui-language.css";
 
 let language: Language = "zh";
@@ -24,10 +25,10 @@ export function t(source: string, values?: Record<string, string | number | null
 
 export function taskText(name: string | null | undefined, code?: string) {
   if (!name) return "—";
-  if (code && !["SCAN", "SINGLE-SCAN", "TODO", "WAREHOUSE", "CLEAN"].includes(code)) return name;
+  if (code && !STANDARD_TASKS.some(task=>task.code===code)) return name;
   const paused = name.endsWith(" · 已暂停");
   const base = paused ? name.slice(0, -" · 已暂停".length) : name;
-  const known = ["仓务", "混件扫描", "单件扫描", "问题单", "清洁"].includes(base);
+  const known = STANDARD_TASKS.some(task=>task.name===base);
   const label = known ? t(base) : !code && base.startsWith("波次 ") ? t("波次 {0}", {0: base.slice(3)}) : base;
   return paused ? t("{0} · 已暂停", {0: label}) : label;
 }
