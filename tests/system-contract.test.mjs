@@ -133,7 +133,7 @@ test("uses one backward-compatible runtime schema path",async()=>{
 test("grants admin every registered page and keeps ordinary accounts explicitly scoped",async()=>{
   const permissions=await loadPure("page-permissions");
   const keys=permissions.PAGE_DEFINITIONS.map(page=>page.key);
-  assert.equal(new Set(keys).size,14);
+  assert.equal(new Set(keys).size,13);
   assert.deepEqual(
     permissions.NAVIGATION_DEFINITIONS.map(page=>page.label),
     ["备货操作","备库总表","备货待办","备货数据","任务分发","工卡扫描","现场看板","综合统计","工作记录","员工数据"],
@@ -337,7 +337,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(scanPage,/todayOperations/);
   assert.match(scanPage,/employeeOperations/);
   assert.match(scanPage,/今日记录/);
-  assert.match(scanPage,/createPortal\(<div className="time-scan-titlebar"/);
+  assert.doesNotMatch(scanPage,/createPortal|titleTarget/);
   assert.doesNotMatch(scanPage,/time-scan-title-copy|扫码工作台|等待扫描员工卡/);
   assert.match(scanPage,/className="time-current-employee"/);
   assert.ok(scanPage.indexOf("time-current-employee")<scanPage.indexOf("time-current-task"),"姓名必须在当前任务上方");
@@ -402,7 +402,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(timekeepingCss,/\.time-task-buttons \{[^}]*repeat\(auto-fit,minmax\(min\(100%,\d+px\),1fr\)\)/s);
   assert.match(timekeepingCss,/\.time-current-employee b \{[^}]*font-size: 32px;[^}]*font-weight: 900;/s);
   assert.match(timekeepingCss,/\.time-task-buttons b \{[^}]*font-size: 17px;/s);
-  assert.match(timekeepingCss,/\.time-scan-wave-wrap \{[^}]*height: 917px;[^}]*overflow: auto;/s);
+  assert.match(timekeepingCss,/\.time-scan-wave-wrap \{[^}]*height: auto;[^}]*overflow: auto;/s);
   assert.match(timekeepingCss,/\.time-scan-wave-table th \{[^}]*position: sticky;[^}]*top: 0;/s);
   assert.match(timekeepingCss,/\.time-task-buttons button\.current \{[^}]*animation: time-current-task-flow/s);
   assert.match(timekeepingCss,/\.time-scan-wave-table tbody tr\.current \{[^}]*animation: time-current-task-flow/s);

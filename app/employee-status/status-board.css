@@ -101,10 +101,11 @@
 .employee-card-pause { flex: 0 0 auto; margin-left: auto; color: #68766e; font-size: 17px; font-weight: 700; }
 .employee-status-card.state-picking,
 .employee-status-card.state-warehouse { background-color: #dcece1; border-color: #b4cebc; --employee-ink: #28694e; }
-.employee-status-card.state-ready { background-color: #e0ecf8; border-color: #b8cce0; --employee-ink: #376b96; }
+.employee-status-card.state-ready { background-color: #f5dddd; border-color: #d9aaaa; --employee-ink: #a43e3e; }
 .employee-status-card.state-off { background-color: #e7e9eb; border-color: #c6ccd0; --employee-ink: #64727c; }
 .employee-status-card.state-not_started { background-color: #fafaf6; border-color: #d7dad3; --employee-ink: #727c71; }
-.state-ready h2 { color: #233b51; }
+.state-ready h2 { color: #512828; }
+.state-ready .employee-card-task { color: #633b3b; --task-ink: #a43e3e; border-top-color: #633b3b26; }
 .state-off h2,.state-not_started h2 { color: #444f4a; }
 .employee-status-change { z-index: 3; position: absolute; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; }
 .employee-status-change::before { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg,transparent 25%,#ffffff90 50%,transparent 75%); transform: translateX(-110%); opacity: 0; animation: employee-status-sheen .6s cubic-bezier(.2,0,.3,1) both; }

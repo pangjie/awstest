@@ -52,16 +52,16 @@ test("badge artwork distinguishes task types and keeps paused tasks recognizable
   assert.equal(employeeTaskStyle({id:1,name:"员工",state:"ready",task:null}),"idle");
 });
 
-test("employee status is separately granted and the endpoint is read only",async()=>{
-  assert.ok(effectivePagePermissions("admin",[]).includes("time-status"));
-  assert.equal(canAccessAnyPage({role:"user",pagePermissions:["time-employees"]},["time-status"]),false);
-  assert.equal(canAccessAnyPage({role:"user",pagePermissions:["time-status"]},["time-status"]),true);
+test("employee status shares employee data permission and the endpoint is read only",async()=>{
+  assert.ok(!effectivePagePermissions("admin",[]).includes("time-status"));
+  assert.equal(canAccessAnyPage({role:"user",pagePermissions:["time-employees"]},["time-employees"]),true);
+  assert.equal(canAccessAnyPage({role:"user",pagePermissions:[]},["time-employees"]),false);
   const api=await readFile(new URL("../app/api/v1/timekeeping/employee-status/route.ts",import.meta.url),"utf8");
-  assert.match(api,/authorizePageAccess\("time-status"\)/);
+  assert.match(api,/authorizePageAccess\("time-employees"\)/);
   assert.match(api,/WHERE e.active=true/);
   assert.doesNotMatch(api,/export async function (POST|PUT|PATCH|DELETE)|reconcileStaleOpenShifts|badge_code|employee_code/);
   const revision=await readFile(new URL("../app/api/v1/timekeeping/revision/route.ts",import.meta.url),"utf8");
-  assert.match(revision,/get\("scope"\)==="employee-status"\s*\?await authorizePageAccess\("time-status"\)/);
+  assert.match(revision,/get\("scope"\)==="employee-status"\s*\?await authorizePageAccess\("time-employees"\)/);
 });
 
 test("employee timers continue work and standby locally, and freeze paused tasks",()=>{
