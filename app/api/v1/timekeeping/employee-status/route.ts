@@ -8,7 +8,7 @@ import { employeeStatus,sortStatusEmployees } from "@/lib/employee-status";
 export const dynamic="force-dynamic";
 
 export async function GET(){
-  const access=await authorizePageAccess("time-status");
+  const access=await authorizePageAccess("time-employees");
   if(!access.authorized)return NextResponse.json({error:access.message},{status:access.status,headers:{"cache-control":"no-store"}});
   // Capture the revision first so a concurrent commit is picked up by the next check.
   const revision=await getTimeRevision();

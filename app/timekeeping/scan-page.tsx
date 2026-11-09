@@ -2,7 +2,6 @@
 import { t, useLanguage, taskText } from "@/app/ui-language";
 
 import { type Dispatch, type SetStateAction, FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { fetchWithTimeout } from "@/lib/client-fetch";
 import { workDate } from "@/lib/timekeeping/time";
 import { isValidEmployeeId } from "@/lib/timekeeping/employee-id";
@@ -14,8 +13,9 @@ import { LeadSummary } from "./wave-participants";
 
 type ScanSelection={key:string;code:string;label:string;labelCode?:string;projectId?:number;extra?:Record<string,unknown>;confirmMessage?:string;confirmValues?:Record<string,string|undefined>};
 
-export default function ScanPage({titleTarget,initialBadge,sortState,setSortState}:{titleTarget:HTMLDivElement|null;initialBadge:string;sortState:ScanWaveSortState;setSortState:Dispatch<SetStateAction<ScanWaveSortState>>}){
+export default function ScanPage({initialBadge,sortState,setSortState}:{initialBadge:string;sortState:ScanWaveSortState;setSortState:Dispatch<SetStateAction<ScanWaveSortState>>}){
   useLanguage();
+  const [historyTab,setHistoryTab]=useState<"personal"|"all">("personal");
   const [code,setCode]=useState(initialBadge);
   const [snapshot,setSnapshot]=useState<EmployeeSnapshot|null>(null);
   const [workItems,setWorkItems]=useState<WorkItemsResponse|null>(null);
@@ -70,7 +70,7 @@ export default function ScanPage({titleTarget,initialBadge,sortState,setSortStat
     document.addEventListener("visibilitychange",visible);
     return()=>{cancelled=true;requests.current++;window.clearInterval(poll);window.clearInterval(clock);document.removeEventListener("visibilitychange",visible)};
   },[loadWorkItems]);
-  useEffect(()=>{inputRef.current?.focus()},[snapshot?.employee.id,titleTarget]);
+  useEffect(()=>{inputRef.current?.focus()},[snapshot?.employee.id]);
 
   const scan=useCallback(async(scannedCode:string,extra:Record<string,unknown>={})=>{
     const normalized=scannedCode.trim();
@@ -79,7 +79,7 @@ export default function ScanPage({titleTarget,initialBadge,sortState,setSortStat
     setPending(true);setError("");
     try{
       const response=await timeApi<ScanResponse>("/api/v1/timekeeping/scan",{method:"POST",body:JSON.stringify({code:normalized,employeeId:snapshot?.employee.id,requestId:crypto.randomUUID(),terminalId:"browser-main",...extra})});
-      if(response.snapshot){setSnapshot(response.snapshot);employeeRef.current=response.snapshot.employee.id;snapshotBaselineRef.current=performance.now();setSnapshotElapsed(0)}
+      if(response.snapshot){if(employeeRef.current!==response.snapshot.employee.id)setHistoryTab("personal");setSnapshot(response.snapshot);employeeRef.current=response.snapshot.employee.id;snapshotBaselineRef.current=performance.now();setSnapshotElapsed(0)}
       await loadWorkItems();
       setSelection(null);
     }catch(scanError){setError(scanError instanceof Error?scanError.message:"扫描操作失败")}
@@ -149,30 +149,28 @@ export default function ScanPage({titleTarget,initialBadge,sortState,setSortStat
   };
 
   return <div className="time-page time-scan-page">
-    {titleTarget&&createPortal(<div className="time-scan-titlebar">
-      <form className="time-scan-title-input" onSubmit={submit}><input ref={inputRef} className={!snapshot?"time-employee-id-entry":undefined} type="text" value={code} onChange={event=>setCode(event.target.value)} placeholder={pending?t("识别中…"):snapshot?t("扫描操作码或任务条码"):t("扫描员工卡")} autoComplete="off" autoCapitalize="characters" spellCheck={false} data-1p-ignore="true" data-lpignore="true" aria-label={t("扫描内容")}/></form>
-      <button className="time-secondary" disabled={!snapshot} onClick={()=>{employeeRef.current=null;requestRef.current++;setSnapshot(null);setSelection(null);setCode("");requestAnimationFrame(()=>inputRef.current?.focus())}} data-ui-size="">{t("切换员工")}</button>
-    </div>,titleTarget)}
     {error&&<div className="time-error">{t(error)}</div>}
 
     <div className="time-scan-grid">
       <section className="time-card time-current-worker">
-        <div className="time-card-title"><div><h3 data-ui-size="">{t("当前状态")}</h3><p>{t("系统时间为美东时间")}</p></div><span className={`time-state ${snapshot?.state??"off"}`}>{snapshot?t(stateLabel(snapshot.state)):t("等待员工")}</span></div>
-        <dl><div><dt data-ui-size="">{t("Sign In")}</dt><dd>{snapshot?formatClock(snapshot.shift?.clockIn):"—"}</dd></div><div><dt data-ui-size="">{t("今日在岗")}</dt><dd>{snapshot?formatDurationWithSeconds(snapshot.today.onDutyMs+(snapshot.shift&&snapshot.shift.workDate===workDate()?snapshotElapsed:0)):"—"}</dd></div><div><dt data-ui-size="">{t("今日工作")}</dt><dd>{snapshot?formatDurationWithSeconds(snapshot.today.productiveMs+(snapshot.shift&&snapshot.state==="working"&&snapshot.shift.workDate===workDate()?snapshotElapsed:0)):"—"}</dd></div></dl>
-        <div className="time-current-employee"><small>{t("姓名")}</small><b>{snapshot?.employee.name??t("扫描员工后显示")}</b></div>
+        <div className="time-current-employee"><form className="time-scan-title-input" onSubmit={submit}><input ref={inputRef} className={!snapshot?"time-employee-id-entry":undefined} type="text" value={code} onChange={event=>setCode(event.target.value)} placeholder={pending?t("识别中…"):snapshot?t("扫描操作码或任务条码"):t("扫描员工卡")} autoComplete="off" autoCapitalize="characters" spellCheck={false} data-1p-ignore="true" data-lpignore="true" aria-label={t("扫描内容")}/></form><div className="time-worker-name"><b title={snapshot?.employee.name}>{snapshot?.employee.name??t("扫描员工后显示")}</b><span className={`time-state ${snapshot?.state??"off"}`}>{snapshot?t(stateLabel(snapshot.state)):t("等待员工")}</span></div></div>
+        <dl><div><dt data-ui-size="">{t("Sign In")}</dt><dd>{snapshot?formatClock(snapshot.shift?.clockIn):"—"}</dd></div><div><dt data-ui-size="">{t("今日在岗")}</dt><dd>{snapshot?formatMinuteDuration(snapshot.today.onDutyMs+(snapshot.shift&&snapshot.shift.workDate===workDate()?snapshotElapsed:0)):"—"}</dd></div><div><dt data-ui-size="">{t("今日工作")}</dt><dd>{snapshot?formatMinuteDuration(snapshot.today.productiveMs+(snapshot.shift&&snapshot.state==="working"&&snapshot.shift.workDate===workDate()?snapshotElapsed:0)):"—"}</dd></div></dl>
+
         <div className="time-current-task"><small>{t("当前任务")}</small><b>{snapshot?.currentProject?`${snapshot.currentProject.code} · ${taskText(snapshot.currentProject.name,snapshot.currentProject.code)}`:snapshot?t("暂无任务"):t("扫描员工后显示")}</b>{snapshot?.currentProject?.assignmentRole?<span>{snapshot.currentProject.assignmentRole==="lead"?t("主负责人"):t("协作人员")}</span>:snapshot?.currentProject?.workType==="standard"&&snapshot.state!=="working"?<span>{t("已暂停")}</span>:null}</div>
         <div className="time-button-row"><button className={`time-success${selection?.key==="clock-in"?" selected":""}`} aria-pressed={selection?.key==="clock-in"} disabled={pending||!snapshot||Boolean(snapshot.shift)} onClick={()=>selectAction("clock-in")} data-ui-size="">{t("上班 / Sign In")}</button><button className={`time-danger${selection?.key==="clock-out"?" selected":""}`} aria-pressed={selection?.key==="clock-out"} disabled={pending||!snapshot?.shift} onClick={()=>selectAction("clock-out")} data-ui-size="">{t("下班 / Sign Out")}</button><button className={`time-warning${selection?.key==="complete"?" selected":""}`} aria-pressed={selection?.key==="complete"} disabled={pending||!currentLeadWave||!snapshot?.shift} onClick={()=>selectAction("complete")} data-ui-size="">{t("完结当前波次")}</button></div>
         <button className="time-confirm-button" type="button" disabled={pending||!selection} onClick={confirmSelection} data-ui-size=""><b>{t("确认 / CONFIRM")}</b><span>{selection?(selection.key==="complete"?`${t("完结")} ${selection.label}`:selection.projectId?taskText(selection.label,selection.labelCode):t(selection.label)):t("请先选择操作或任务")}</span></button>
-        <div className="time-current-history"><div><b>{t("今日记录")}</b>{snapshot&&<span>{employeeOperations.length} {t("条")}</span>}</div>{snapshot?(employeeOperations.length?<ul>{employeeOperations.map(item=><li key={item.id}><time>{formatClockWithSeconds(item.time)}</time><span>{item.message}</span></li>)}</ul>:<p>{t("今天尚无操作记录")}</p>):<p>{t("扫描员工后显示当天记录")}</p>}</div>
+        <div className="time-current-history"><div role="tablist">{(["personal","all"] as const).map(tab=><button key={tab} type="button" role="tab" id={`scan-history-${tab}-tab`} aria-controls={`scan-history-${tab}`} aria-selected={historyTab===tab} onClick={()=>setHistoryTab(tab)}>{t(tab==="personal"?"今日记录":"今日操作")}</button>)}</div>
+          <div className="time-history-panel" role="tabpanel" id="scan-history-personal" aria-labelledby="scan-history-personal-tab" hidden={historyTab!=="personal"}>{snapshot?(employeeOperations.length?<ul>{employeeOperations.map(item=><li key={item.id}><time>{formatClockWithSeconds(item.time)}</time><span>{item.message}</span></li>)}</ul>:<p>{t("今天尚无操作记录")}</p>):<p>{t("扫描员工后显示当天记录")}</p>}</div>
+          <div className="time-history-panel time-history-all" role="tabpanel" id="scan-history-all" aria-labelledby="scan-history-all-tab" hidden={historyTab!=="all"}>{workItems?.todayOperations.length?<ul>{workItems.todayOperations.map(item=><li key={item.id} className={item.tone}><time>{formatClockWithSeconds(item.time)}</time><b>{item.employeeName}</b><span>{item.message}</span><small>{item.operator}</small></li>)}</ul>:<p>{t("今天尚无操作记录")}</p>}</div>
+        </div>
       </section>
       <section className="time-card time-task-picker">
-        <div className="time-card-title"><div><h3 data-ui-size="">{t("选择任务")}</h3><p>{t("只有在岗员工可以开始计时")}</p></div></div>
         <h4 data-ui-size="">{t("固定任务")}</h4><div className="time-task-buttons">{workItems?.standardTasks.map(item=>{const isCurrent=snapshot?.currentProject?.id===item.id;const selected=selection?.projectId===item.id;return <button type="button" key={item.id} className={[isCurrent?"current":"",selected?"selected":""].filter(Boolean).join(" ")||undefined} aria-current={isCurrent?"true":undefined} aria-pressed={selected} disabled={pending||!snapshot} onClick={()=>selectItem(item)} data-ui-size=""><b>{taskText(item.name,item.code)}</b><span>{snapshot?.shift?item.code:snapshot?`Sign In · ${item.code}`:t("扫描员工后可用")}</span></button>})}{workItems&&workItems.standardTasks.length===0&&<p className="time-empty">{t("暂无固定任务")}</p>}</div>
         <h4 data-ui-size="">{t("当前波次")}</h4><ScanWaveTable elapsed={elapsed} sortState={sortState} setSortState={setSortState} items={workItems?.currentWaves??[]} currentProjectId={snapshot?.currentProject?.id??null} selectedProjectId={selection?.projectId??null} disabled={pending||!snapshot} selectItem={selectItem} openScan={badge=>void scan(badge)}/>{workItems&&workItems.currentWaves.length===0&&<p className="time-empty">{t("暂无当前波次")}</p>}
       </section>
     </div>
 
-    <section className="time-card time-scan-log"><div className="time-card-title"><div><h3 data-ui-size="">{t("今日操作")}</h3><p>{t("显示今天全部操作记录，共")} {workItems?.todayOperations.length??0} {t("条")}</p></div></div>{workItems?.todayOperations.length?<ul>{workItems.todayOperations.map(item=><li key={item.id} className={item.tone}><time>{formatClockWithSeconds(item.time)}</time><b>{item.employeeName}</b><span>{item.message}</span><small>{item.operator}</small></li>)}</ul>:<p className="time-empty">{t("今天尚无操作记录")}</p>}</section>
+
   </div>;
 }
 
@@ -210,3 +208,5 @@ function scanWaveSortValue(item:WorkItem,key:ScanWaveSortKey,elapsed:number):str
     case "default":return item.sortOrder;
   }
 }
+
+function formatMinuteDuration(ms:number){return formatDurationWithSeconds(ms).slice(0,-3)}

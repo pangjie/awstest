@@ -160,7 +160,7 @@ button:disabled { cursor: default; opacity: .48; }
 .time-task-buttons b,.time-task-buttons span { min-width: 0; overflow-wrap: anywhere; }
 .time-task-buttons b { font-size: 17px; line-height: 1.25; }
 .time-task-buttons span { color: #66768b; font-size: 13px; line-height: 1.3; }
-.time-scan-wave-wrap { height: 917px; max-height: none; margin-bottom: 12px; overflow: auto; }
+.time-scan-wave-wrap { height: auto; max-height: none; margin-bottom: 12px; overflow: auto; }
 .time-table.time-scan-wave-table { width: 100%; min-width: 0; table-layout: fixed; }
 .time-scan-wave-table th,.time-scan-wave-table td { height: 43px; padding: 5px 3px; color: #43536a; font-size: 12px; text-align: center; }
 .time-scan-wave-table th { position: sticky; z-index: 3; top: 0; background: #f8fafc; color: #53647a; font-weight: 850; box-shadow: 0 1px 0 #dfe5ed; }
@@ -677,3 +677,50 @@ html:not([lang="zh-CN"]) .time-dashboard-wave-table td { padding-inline: 6px; }
   .time-monthly-print-report sup { margin-left: .6mm; font-size: 6pt; }
   .time-monthly-print-report footer { margin-top: 2mm; padding-top: 1.5mm; border-top: 1px solid #c8d0dc; color: #657286; font-size: 6.5pt; text-align: right; }
 }
+
+/* Task dispatch keeps controls visible while its lists use the remaining height. */
+.time-status-link { display: inline-flex; align-items: center; text-decoration: none; }
+.workspace[data-page="任务分发"] { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.workspace[data-page="任务分发"] > .content { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px; overflow: hidden; }
+.time-scan-page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.time-scan-grid { flex: 1; min-height: 0; gap: 12px; }
+.time-task-picker { display: flex; flex-direction: column; overflow: hidden; }
+.time-scan-wave-wrap { flex: 1; min-height: 0; height: auto; margin-bottom: 0; }
+.time-current-employee { margin: 12px 14px 0; padding-bottom: 8px; }
+.time-worker-name { display: flex; align-items: center; gap: 10px; margin-top: 8px; min-width: 0; }
+.time-worker-name > b { min-width: 0; margin: 0; flex: 0 1 auto; }
+.time-worker-name .time-state { flex-shrink: 0; }
+.time-current-worker dl { display: flex; justify-content: space-between; gap: 8px; padding: 9px 14px; }
+.time-current-worker dl div { display: flex; align-items: baseline; gap: 4px; border: 0; white-space: nowrap; }
+.time-current-worker dd { margin: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+.time-current-worker dt { font-size: 11px; color: #526176; }
+.time-current-task { margin: 8px 14px; padding: 8px 10px; }
+.time-current-task b { overflow-wrap: anywhere; }
+.time-current-worker .time-button-row { margin: 8px 14px; }
+.time-current-worker .time-confirm-button { margin: 0 14px 8px; width: calc(100% - 28px); }
+.time-current-history { display: flex; flex-direction: column; margin: 0 14px 10px; padding-top: 8px; overflow: hidden; }
+.time-current-history > [role="tablist"] { justify-content: flex-start; gap: 16px; flex-shrink: 0; }
+.time-current-history [role="tab"] { border: 0; border-bottom: 2px solid transparent; background: none; color: #526176; padding: 5px 0; font-size: 14px; font-weight: 700; }
+.time-current-history [role="tab"][aria-selected="true"] { border-color: #3568d4; color: #2454b2; }
+.time-current-history > .time-history-panel { display: block; flex: 1; min-height: 0; overflow: auto; margin: 0; }
+.time-current-history > .time-history-panel[hidden] { display: none; }
+.time-current-history ul { overflow: visible; }
+.time-current-history li span { white-space: normal; overflow-wrap: anywhere; }
+.time-history-all li { grid-template-columns: 66px minmax(0,1fr); }
+.time-history-all li > span,.time-history-all li > small { grid-column: 2; }
+.time-current-worker > :not(.time-current-history),.time-task-picker > :not(.time-scan-wave-wrap) { flex-shrink: 0; }
+@media (max-width: 1100px), (max-height: 679px) {
+  .workspace[data-page="任务分发"] > .content { overflow: auto; display: block; }
+  .time-scan-page { overflow: visible; }
+  .time-current-history { flex: none; height: 260px; }
+  .time-scan-wave-wrap { flex: none; height: 450px; }
+}
+@media (max-width: 520px) {
+  .time-scan-grid { grid-template-columns: minmax(0,1fr); }
+  .time-current-worker dl { gap: 4px; padding-inline: 8px; }
+  .time-current-worker dt { font-size: 10px; }
+  .time-current-worker dd { font-size: 12px; }
+}
+.time-current-worker dl div { min-width: 0; }
+.time-current-worker dt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.time-current-worker dd { flex-shrink: 0; }
