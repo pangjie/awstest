@@ -488,7 +488,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(dashboardPage,/className="time-dashboard-main-grid"/);
   assert.doesNotMatch(dashboardPage,/EmployeeStatusList|time-dashboard-employee-stats/);
   assert.match(dashboardPage,/task\.participants\.map\(person=>/);
-  assert.match(dashboardPage,/<ProjectHoursSummary projects=\{projects\} tasks=\{dailyTasks\} waveMs=\{taskTotals.waveMs\} openScan=\{openScan\}\/\>/);
+  assert.match(dashboardPage,/<ProjectHoursSummary projects=\{projects\} tasks=\{dailyTasks\} standbyTask=\{standbyTask\} waveMs=\{taskTotals.waveMs\} openScan=\{openScan\}\/\>/);
   for(const label of ["项目工时","累计用时","当前人数"])assert.ok(dashboardPage.includes(`t("${label}")`));
   assert.match(dashboardPage,/className="time-daily-people-popover"/);
   assert.match(dashboardPage,/LeadSummary lead=\{lead\} helpers=\{helpers\}/);

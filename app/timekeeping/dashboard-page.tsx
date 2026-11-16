@@ -96,7 +96,7 @@ export default function DashboardPage({titleTarget,date,exportStartDate,exportEn
     };
   },[date,load]);
 
-  const {projects,dailyTasks,taskTotals,waveKpis,completionKpis,employeeKpis}=useMemo(()=>dashboardView(data,now),[data,now]);
+  const {projects,dailyTasks,taskTotals,waveKpis,completionKpis,employeeKpis,standbyTask}=useMemo(()=>dashboardView(data,now),[data,now]);
   const filterOptions=useMemo(()=>({
     channel:countOptions(projects.map(item=>channelLabel(item.channelName))),
     type:countOptions(projects.map(item=>waveTypeInfo(item.channelType).label)),
@@ -196,7 +196,7 @@ export default function DashboardPage({titleTarget,date,exportStartDate,exportEn
           <EmployeeStatusMetric total={employeeKpis.total} picking={employeeKpis.picking} warehouse={employeeKpis.warehouse} standby={employeeKpis.standby}/>
           <WorkHoursMetric onDutyMs={taskTotals.onDutyMs} productiveMs={taskTotals.totalMs} outboundMs={taskTotals.outboundMs}/>
         </div>
-        <ProjectHoursSummary projects={projects} tasks={dailyTasks} waveMs={taskTotals.waveMs} openScan={openScan}/>
+        <ProjectHoursSummary projects={projects} tasks={dailyTasks} standbyTask={standbyTask} waveMs={taskTotals.waveMs} openScan={openScan}/>
       </aside>
 
       <section className="time-card time-wave-board">
@@ -227,7 +227,7 @@ function CompletionMetric({counts}:{counts:ReturnType<typeof dashboardView>["com
 function EmployeeStatusMetric({total,picking,warehouse,standby}:{total:number;picking:number;warehouse:number;standby:number}){
   useLanguage();return <article className="time-metric time-status-metric time-employee-status-metric"><span>{t("员工统计")}<small>{t("员工总数")} {total}</small></span><div><label><b>{picking}</b><small>{t("拣货")}</small></label><i>/</i><label><b>{warehouse}</b><small>{t("其他作业")}</small></label><i>/</i><label><b>{standby}</b><small>{t("待命")}</small></label></div></article>}
 
-function ProjectHoursSummary({projects,tasks,waveMs,openScan}:{projects:WorkItem[];tasks:DashboardResponse["dailyTasks"];waveMs:number;openScan?:((badge:string)=>void)}){
+function ProjectHoursSummary({projects,tasks,waveMs,standbyTask,openScan}:{standbyTask:DashboardResponse["dailyTasks"][number];projects:WorkItem[];tasks:DashboardResponse["dailyTasks"];waveMs:number;openScan?:((badge:string)=>void)}){
   useLanguage();
   const people=new Map<number,DashboardResponse["dailyTasks"][number]["participants"][number]>();
   for(const project of projects)for(const person of project.participants){
@@ -238,7 +238,7 @@ function ProjectHoursSummary({projects,tasks,waveMs,openScan}:{projects:WorkItem
   const participants=Array.from(people.values()).sort((left,right)=>left.name.localeCompare(right.name,"zh-CN")||left.employeeId-right.employeeId);
   const wave={id:0,code:"",name:"波次拣货",sortOrder:0,totalMs:waveMs,activeCount:participants.filter(person=>person.active).length,participants};
   const orderedTasks=[...DASHBOARD_TASK_ORDER.flatMap(code=>tasks.filter(task=>task.code===code)),...tasks.filter(task=>!DASHBOARD_TASK_ORDER.includes(task.code))];
-  return <section className="time-project-hours"><h3>{t("项目工时")}</h3><div className="time-project-hours-head"><span>{t("项目")}</span><span>{t("累计用时")}</span><span>{t("当前人数")}</span></div>{[wave,...orderedTasks].map(task=><ProjectHoursRow task={task} openScan={openScan} key={task.id}/>)}</section>;
+  return <section className="time-project-hours"><h3>{t("项目工时")}</h3><div className="time-project-hours-head"><span>{t("项目")}</span><span>{t("累计用时")}</span><span>{t("当前人数")}</span></div>{[wave,...orderedTasks,standbyTask].map(task=><ProjectHoursRow task={task} openScan={openScan} key={task.id}/>)}</section>;
 }
 
 function ProjectHoursRow({task,openScan}:{task:DashboardResponse["dailyTasks"][number];openScan?:((badge:string)=>void)}){
@@ -324,8 +324,14 @@ function dashboardView(data:DashboardResponse|null,now:number){
     for(const person of task.participants)if(person.active)employees.add(person.employeeId);
   }
   for(const employeeId of pickingEmployees)warehouseEmployees.delete(employeeId);
+  const standbyPeople=attendance.map(employee=>({
+    employeeId:employee.employeeId,badgeCode:employee.badgeCode,name:employee.name,
+    totalMs:Math.max(0,employee.onDutyMs-employee.productiveMs)+(employee.clockOut===null&&employee.state==="ready"?liveElapsed:0),
+    active:Boolean(data&&now>=rangeStart&&now<rangeEnd&&employee.clockOut===null&&employee.state==="ready"),
+  })).filter(person=>person.totalMs>0||person.active).sort((a,b)=>a.name.localeCompare(b.name,"zh-CN")||a.employeeId-b.employeeId);
+  const standbyTask={id:-1,code:"",name:"在岗待命",sortOrder:999,totalMs:standbyPeople.reduce((sum,person)=>sum+person.totalMs,0),activeCount:standbyPeople.filter(person=>person.active).length,participants:standbyPeople};
   const standby=data?.attendance.filter(employee=>employee.state==="ready").length??0;
-  return {projects,dailyTasks,taskTotals,waveKpis,completionKpis,employeeKpis:{total:attendance.length,picking:pickingEmployees.size,warehouse:warehouseEmployees.size,standby}};
+  return {projects,dailyTasks,taskTotals,waveKpis,completionKpis,standbyTask,employeeKpis:{total:attendance.length,picking:pickingEmployees.size,warehouse:warehouseEmployees.size,standby}};
 }
 
 function countOptions(values:string[]):FilterOption[]{const counts=new Map<string,number>();for(const value of values)counts.set(value,(counts.get(value)??0)+1);return Array.from(counts,([value,count])=>({value,label:value,count}))}

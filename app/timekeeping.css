@@ -681,7 +681,7 @@ html:not([lang="zh-CN"]) .time-dashboard-wave-table td { padding-inline: 6px; }
 /* Task dispatch keeps controls visible while its lists use the remaining height. */
 .time-status-link { display: inline-flex; align-items: center; text-decoration: none; }
 .workspace[data-page="任务分发"] { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
-.workspace[data-page="任务分发"] > .content { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px; overflow: hidden; }
+.workspace[data-page="任务分发"] > .content { flex: 1; width: 100%; max-width: none; margin: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 12px; overflow: hidden; }
 .time-scan-page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .time-scan-grid { flex: 1; min-height: 0; gap: 12px; }
 .time-task-picker { display: flex; flex-direction: column; overflow: hidden; }
@@ -696,7 +696,8 @@ html:not([lang="zh-CN"]) .time-dashboard-wave-table td { padding-inline: 6px; }
 .time-current-worker dt { font-size: 11px; color: #526176; }
 .time-current-task { margin: 8px 14px; padding: 8px 10px; }
 .time-current-task b { overflow-wrap: anywhere; }
-.time-current-worker .time-button-row { margin: 8px 14px; }
+.time-current-worker .time-button-row { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; margin: 8px 14px; padding: 0; }
+.time-current-worker .time-button-row button { min-width: 0; height: auto; min-height: 36px; padding: 6px 4px; white-space: normal; overflow-wrap: anywhere; }
 .time-current-worker .time-confirm-button { margin: 0 14px 8px; width: calc(100% - 28px); }
 .time-current-history { display: flex; flex-direction: column; margin: 0 14px 10px; padding-top: 8px; overflow: hidden; }
 .time-current-history > [role="tablist"] { justify-content: flex-start; gap: 16px; flex-shrink: 0; }
