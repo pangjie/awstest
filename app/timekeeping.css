@@ -110,8 +110,8 @@ button:disabled { cursor: default; opacity: .48; }
 .time-inline-warning { border-color: #ead29d; background: #fff8e9; color: #8c6517; }
 .time-empty { margin: 0; padding: 28px 20px; color: #98a3b2; text-align: center; font-size: 14px; }
 
-.time-scan-grid { display: grid; min-height: 0; grid-template-columns: minmax(330px,.72fr) minmax(480px,1.28fr); align-items: stretch; gap: 16px; }
-.time-scan-grid > .time-card { min-height: 0; }
+.time-scan-grid { display: grid; min-height: 0; grid-template-columns: minmax(380px,.7fr) minmax(0,1.3fr); align-items: stretch; gap: 16px; }
+.time-scan-grid > .time-card { min-width: 0; min-height: 0; }
 .time-current-worker { display: flex; flex-direction: column; }
 .time-current-worker dl { display: grid; grid-template-columns: repeat(3,1fr); margin: 0; padding: 18px 20px; border-bottom: 1px solid #edf1f5; }
 .time-current-worker dl div { border-right: 1px solid #edf1f5; text-align: center; }
@@ -681,11 +681,13 @@ html:not([lang="zh-CN"]) .time-dashboard-wave-table td { padding-inline: 6px; }
 /* Task dispatch keeps controls visible while its lists use the remaining height. */
 .time-status-link { display: inline-flex; align-items: center; text-decoration: none; }
 .workspace[data-page="任务分发"] { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
-.workspace[data-page="任务分发"] > .content { flex: 1; width: 100%; max-width: none; margin: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 12px; overflow: hidden; }
+.workspace[data-page="任务分发"] > .content { flex: 1; width: 100%; max-width: 1500px; margin: 0 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 12px; overflow: hidden; }
 .time-scan-page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .time-scan-grid { flex: 1; min-height: 0; gap: 12px; }
 .time-task-picker { display: flex; flex-direction: column; overflow: hidden; }
-.time-scan-wave-wrap { flex: 1; min-height: 0; height: auto; margin-bottom: 0; }
+.time-scan-wave-wrap { flex: 1; min-height: 0; height: auto; margin-bottom: 0; scrollbar-gutter: stable; }
+.time-scan-wave-table .time-scan-wave-empty td { height: 100px; padding: 24px 12px; color: #75849a; }
+.time-scan-wave-table .time-scan-wave-empty:hover { background: transparent; }
 .time-current-employee { margin: 12px 14px 0; padding-bottom: 8px; }
 .time-worker-name { display: flex; align-items: center; gap: 10px; margin-top: 8px; min-width: 0; }
 .time-worker-name > b { min-width: 0; margin: 0; flex: 0 1 auto; }
