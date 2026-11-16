@@ -36,7 +36,7 @@ export type CardScanEmployeeResponse={
 export type DashboardResponse={
   todayExport?:{date:string;ready:boolean};
   ok:true;date:string;range:{id:"custom";label:string;startDate:string;endDate:string;start:string;end:string};revision:number;generatedAt:string;timeZone:string;filterUniverse:{channels:string[]};
-  attendance:Array<{employeeId:number;name:string;type:string;clockIn:string|null;clockOut:string|null;onDutyMs:number;productiveMs:number;offDutyMs:number;state:string;currentProject:{code:string;name:string}|null}>;
+  attendance:Array<{employeeId:number;badgeCode:string;name:string;type:string;clockIn:string|null;clockOut:string|null;onDutyMs:number;productiveMs:number;offDutyMs:number;state:string;currentProject:{code:string;name:string}|null}>;
   taskTotals:{totalMs:number;waveMs:number;scanMs:number;otherMs:number;activeCount:number;waveActiveCount:number;scanActiveCount:number;otherActiveCount:number};
   dailyTasks:Array<{id:number;code:string;name:string;sortOrder:number;totalMs:number;activeCount:number;participants:Array<{employeeId:number;badgeCode:string;name:string;totalMs:number;active:boolean}>}>;
   projectTotals:WorkItem[];

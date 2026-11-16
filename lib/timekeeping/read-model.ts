@@ -183,7 +183,7 @@ export async function readDashboard(requestedStartDate?:string|null,requestedEnd
     const onDutyMs=shifts.reduce((sum,row)=>sum+durationMs(row.clock_in,row.clock_out??now),0);
     const productiveMs=sessions.reduce((sum,row)=>sum+sessionDuration(row,now),0);
     const end=open?now.getTime():new Date(shifts.at(-1)?.clock_out??firstIn).getTime();
-    return [{employeeId:employee.id,name:employee.name,type:employee.organization_type,employmentActive:employee.active,clockIn:toIso(firstIn),clockOut:open?null:toIsoOrNull(shifts.at(-1)?.clock_out),onDutyMs,productiveMs,offDutyMs:Math.max(0,end-new Date(firstIn).getTime()-onDutyMs),state:!employee.active?"inactive":open?(current?"working":"ready"):"off",currentProject:current?{code:current.code,name:current.name}:null}];
+    return [{employeeId:employee.id,badgeCode:employee.badge_code,name:employee.name,type:employee.organization_type,employmentActive:employee.active,clockIn:toIso(firstIn),clockOut:open?null:toIsoOrNull(shifts.at(-1)?.clock_out),onDutyMs,productiveMs,offDutyMs:Math.max(0,end-new Date(firstIn).getTime()-onDutyMs),state:!employee.active?"inactive":open?(current?"working":"ready"):"off",currentProject:current?{code:current.code,name:current.name}:null}];
   });
   const rangeSessions=sessionsResult.rows.filter(row=>sessionDurationInRange(row,now,rangeStart,rangeEnd)>0);
   const isActive=(row:ParticipantRow)=>rangeContainsNow&&!row.ended_at&&row.shift_clock_out===null;
