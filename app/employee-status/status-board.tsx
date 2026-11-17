@@ -19,6 +19,7 @@ export default function EmployeeStatusBoard(){
   const [blocked,setBlocked]=useState(false);
   const [fullscreenError,setFullscreenError]=useState("");
   const [changes,setChanges]=useState<Record<number,CardChange>>({});
+  const [latestFlipId,setLatestFlipId]=useState<number|null>(null);
 
   useEffect(()=>{
     let disposed=false,busy=false,initial=true,stopped=false,wasActive=false;
@@ -27,6 +28,7 @@ export default function EmployeeStatusBoard(){
     let generation=0;
     let previous:StatusSnapshot|null=null,suppressAnimation=false,changeSequence=0;
     let changeMarks:Record<number,CardChange>={};
+    let latestFlip:number|null=null;
     const tick=async()=>{
       if(disposed||stopped||busy)return;
       window.clearTimeout(poll);
@@ -65,9 +67,11 @@ export default function EmployeeStatusBoard(){
           const before=new Map(previous?.employees.map(employee=>[employee.id,employee]));
           const animate=!fresh&&!suppressAnimation&&previous?.date===data.date;
           const nextMarks:Record<number,CardChange>={};
+          const flipped:StatusEmployee[]=[];
           for(const employee of data.employees){
             const old=before.get(employee.id);
             if(animate&&old&&(old.state!==employee.state||old.task!==employee.task)){
+              if(EMPLOYEE_STATUS_LABELS[old.state]!==EMPLOYEE_STATUS_LABELS[employee.state])flipped.push(employee);
               const running=changeMarks[employee.id];
               // During the flip, update the destination face rather than queueing obsolete states.
               nextMarks[employee.id]=running?.kind==="flip"&&Date.now()-running.startedAt<420?running:{
@@ -78,6 +82,11 @@ export default function EmployeeStatusBoard(){
             else if(animate&&changeMarks[employee.id])nextMarks[employee.id]=changeMarks[employee.id];
           }
           changeMarks=nextMarks;setChanges(nextMarks);
+          // A snapshot has no per-change timestamps; resolve simultaneous flips by name.
+          if(!animate)latestFlip=null;
+          else if(flipped.length)latestFlip=flipped.sort((a,b)=>a.name.localeCompare(b.name,"zh-CN")||a.id-b.id)[0].id;
+          else if(!data.employees.some(employee=>employee.id===latestFlip))latestFlip=null;
+          setLatestFlipId(latestFlip);
           previous=data;suppressAnimation=false;
           revision=data.revision;date=data.date;
           offset=new Date(data.generatedAt).getTime()-Date.now();
@@ -96,7 +105,7 @@ export default function EmployeeStatusBoard(){
     const timer=window.setInterval(()=>setNow(Date.now()+offset),1_000);
     const visible=()=>{
       if(document.visibilityState!=="visible"){
-        generation++;suppressAnimation=true;changeMarks={};setChanges({});window.clearTimeout(poll);return;
+        generation++;suppressAnimation=true;changeMarks={};setChanges({});latestFlip=null;setLatestFlipId(null);window.clearTimeout(poll);return;
       }
       void tick();
     };
@@ -140,7 +149,7 @@ export default function EmployeeStatusBoard(){
       <section className="employee-status-grid" aria-label={t("员工状态卡片")}>
         {snapshot?.employees.map(employee=>{
           const change=changes[employee.id];
-          return <div key={`${employee.id}-${change?.kind==="flip"?change.sequence:"still"}`} className="employee-card-slot">
+          return <div key={`${employee.id}-${change?.kind==="flip"?change.sequence:"still"}`} className={`employee-card-slot${employee.id===latestFlipId?" is-latest-flip":""}`}>
             {change?.kind==="flip"?<div key={change.sequence} className="employee-card-flip">
               <EmployeeCard elapsedMs={change.previous.elapsedMs??0} employee={change.previous} face="flip-old" hidden/>
               <EmployeeCard elapsedMs={employeeElapsedMs(employee,snapshot!.generatedAt,timerNow)} employee={employee} face="flip-back"/>
