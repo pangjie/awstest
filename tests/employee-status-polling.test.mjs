@@ -38,7 +38,7 @@ async function board(start,employees=[],useFetchWrapper=false){
   vm.runInNewContext(compiled,context);context.exports.default();const cleanup=effect();
   const settle=async()=>{for(let n=0;n<20;n++)await Promise.resolve()};
   await settle();
-  return {requests,updates,response,cleanup,get changes(){return states[6]},setRespond:fn=>respond=fn,
+  return {requests,updates,response,cleanup,get changes(){return states[6]},get latestFlipId(){return states[7]},setRespond:fn=>respond=fn,
     async advance(ms){now+=ms;for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn()}await settle()},
     async visible(value){document.visibilityState=value?"visible":"hidden";listeners.visibilitychange();await settle()},
   };
@@ -173,6 +173,30 @@ test("card highlights only state or task changes, restarts per employee and supp
     app.setRespond(async()=>app.response(200,[employee]));await app.visible(true);
     assert.equal(Object.keys(app.changes).length,0);
     await update([employee,{...employee,id:2}]);assert.equal(Object.keys(app.changes).length,0);
+  }finally{app.cleanup()}
+});
+
+test("latest flip border persists, ignores task changes and resets on recovery",async()=>{
+  const a={id:1,name:"Alice",state:"ready",task:null};
+  const b={id:2,name:"Bob",state:"ready",task:null};
+  const app=await board("2026-09-29T15:00:00Z",[a,b]);
+  const update=async items=>{app.setRespond(async()=>app.response(200,items));await app.advance(1000)};
+  try{
+    assert.equal(app.latestFlipId,null);
+    const workingA={...a,state:"picking",task:"A"};
+    const workingB={...b,state:"warehouse",task:"仓务"};
+    await update([a,workingB]);assert.equal(app.latestFlipId,2);
+    await update([workingA,workingB]);assert.equal(app.latestFlipId,1);
+    await update([workingA,{...workingB,task:"清洁"}]);assert.equal(app.latestFlipId,1);
+    app.setRespond(async()=>app.response(304));await app.advance(1000);assert.equal(app.latestFlipId,1);
+    await update([b,a]);assert.equal(app.latestFlipId,1); // Simultaneous changes use name, not response order.
+    await update([b]);assert.equal(app.latestFlipId,null);
+    await update([workingB]);assert.equal(app.latestFlipId,2);
+    app.setRespond(async()=>{throw new Error("offline")});await app.advance(1000);
+    app.setRespond(async()=>app.response(200,[b]));await app.advance(2000);assert.equal(app.latestFlipId,null);
+    await update([workingB]);assert.equal(app.latestFlipId,2);
+    await app.visible(false);assert.equal(app.latestFlipId,null);
+    app.setRespond(async()=>app.response(200,[b]));await app.visible(true);assert.equal(app.latestFlipId,null);
   }finally{app.cleanup()}
 });
 
