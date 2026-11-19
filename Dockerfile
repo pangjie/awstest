@@ -16,7 +16,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 WORKDIR /app
-RUN addgroup -S app && adduser -S -G app app
+RUN apk add --no-cache 'zlib>=1.4-r0' \
+    && addgroup -S app && adduser -S -G app app
 COPY --from=builder --chown=app:app /app/public ./public
 COPY --from=builder --chown=app:app /app/.next/standalone ./
 COPY --from=builder --chown=app:app /app/.next/static ./.next/static
