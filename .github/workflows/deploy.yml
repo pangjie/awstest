@@ -20,7 +20,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     name: Build ARM image and deploy through SSM
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     environment: ${{ github.event_name == 'workflow_dispatch' && 'production-alt' || 'production' }}
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
@@ -119,10 +119,32 @@ jobs:
           sbom: false
 
       - name: Wait for ECR basic vulnerability scan
+        timeout-minutes: 17
         run: |
-          aws ecr wait image-scan-complete \
-            --repository-name "${ECR_REPOSITORY}" \
-            --image-id "imageTag=${GITHUB_SHA}"
+          set -euo pipefail
+          # Each AWS waiter allows about five minutes. Slow scans get three windows.
+          for attempt in 1 2 3; do
+            if aws ecr wait image-scan-complete \
+              --repository-name "${ECR_REPOSITORY}" \
+              --image-id "imageTag=${GITHUB_SHA}"; then
+              break
+            fi
+            scan="$(aws ecr describe-image-scan-findings \
+              --repository-name "${ECR_REPOSITORY}" \
+              --image-id "imageTag=${GITHUB_SHA}" \
+              --query imageScanStatus --output json)"
+            echo "Scan attempt ${attempt}: ${scan}"
+            status="$(jq -r '.status' <<< "${scan}")"
+            if [[ "${status}" == COMPLETE ]]; then break; fi
+            if [[ "${status}" != IN_PROGRESS && "${status}" != PENDING ]]; then
+              echo "::error::ECR scan cannot complete: ${status}"
+              exit 1
+            fi
+            if [[ "${attempt}" == 3 ]]; then
+              echo '::error::ECR scan did not finish within approximately 15 minutes.'
+              exit 1
+            fi
+          done
           aws ecr describe-image-scan-findings \
             --repository-name "${ECR_REPOSITORY}" \
             --image-id "imageTag=${GITHUB_SHA}" \
