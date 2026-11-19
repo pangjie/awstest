@@ -1,9 +1,10 @@
 "use client";
 import { t, useLanguage, taskText } from "@/app/ui-language";
 
-import { useEffect,useState } from "react";
+import { useEffect,useRef,useState } from "react";
+import { createAttendanceAudio,playAttendanceAudio,stopAttendanceAudio,type AttendanceAudio } from "./attendance-audio";
 import { fetchWithTimeout } from "@/lib/client-fetch";
-import { EMPLOYEE_STATUS_LABELS,employeeElapsedMs,employeeTaskStyle,statusClock,type StatusSnapshot,type StatusEmployee } from "@/lib/employee-status";
+import { attendanceSounds,EMPLOYEE_STATUS_LABELS,employeeElapsedMs,employeeTaskStyle,statusClock,type StatusSnapshot,type StatusEmployee } from "@/lib/employee-status";
 
 import { STANDARD_TASKS } from "@/lib/timekeeping/standard-tasks";
 import { formatDurationWithSeconds } from "@/app/timekeeping/format";
@@ -20,8 +21,29 @@ export default function EmployeeStatusBoard(){
   const [fullscreenError,setFullscreenError]=useState("");
   const [changes,setChanges]=useState<Record<number,CardChange>>({});
   const [latestFlipId,setLatestFlipId]=useState<number|null>(null);
+  const [soundEnabled,setSoundEnabled]=useState(false);
+  const [volume,setVolume]=useState(.8);
+  const [soundError,setSoundError]=useState("");
+  const sound=useRef<{audio:AttendanceAudio|null;enabled:boolean;volume:number}>({audio:null,enabled:false,volume:.8});
+
+  async function enableSound(preview=false){
+    try{
+      const audio=sound.current.audio??createAttendanceAudio();sound.current.audio=audio;
+      audio.context.onstatechange=()=>{
+        if(audio.context.state!=="running"){sound.current.enabled=false;setSoundEnabled(false);stopAttendanceAudio(audio)}
+      };
+      await audio.context.resume();
+      if(sound.current.audio!==audio)return;
+      if(audio.context.state!=="running")throw new Error("Audio unavailable");
+      sound.current.enabled=true;setSoundEnabled(true);setSoundError("");
+      if(preview){stopAttendanceAudio(audio);playAttendanceAudio(audio,["in","out"],sound.current.volume)}
+    }catch{sound.current.enabled=false;setSoundEnabled(false);setSoundError("声音无法启用，请检查浏览器和设备音量后重试。")}
+  }
+
+  function muteSound(){sound.current.enabled=false;setSoundEnabled(false);stopAttendanceAudio(sound.current.audio)}
 
   useEffect(()=>{
+    const soundState=sound.current;
     let disposed=false,busy=false,initial=true,stopped=false,wasActive=false;
     let revision:number|null=null,date="",offset=0,failures=0;
     let poll:number|undefined;
@@ -57,6 +79,7 @@ export default function EmployeeStatusBoard(){
         }
         if(disposed||requestGeneration!==generation)return;
         if(response.status===401||response.status===403){
+          stopAttendanceAudio(sound.current.audio);
           stopped=true;setBlocked(true);setSnapshot(null);
           setError(response.status===401?"登录已失效，请重新登录":"员工状态访问权限已被取消");return;
         }
@@ -87,6 +110,10 @@ export default function EmployeeStatusBoard(){
           else if(flipped.length)latestFlip=flipped.sort((a,b)=>a.name.localeCompare(b.name,"zh-CN")||a.id-b.id)[0].id;
           else if(!data.employees.some(employee=>employee.id===latestFlip))latestFlip=null;
           setLatestFlipId(latestFlip);
+          if(animate&&previous&&sound.current.enabled&&sound.current.audio){
+            try{playAttendanceAudio(sound.current.audio,attendanceSounds(previous.employees,data.employees),sound.current.volume)}
+            catch{sound.current.enabled=false;setSoundEnabled(false);setSoundError("声音无法启用，请检查浏览器和设备音量后重试。")}
+          }
           previous=data;suppressAnimation=false;
           revision=data.revision;date=data.date;
           offset=new Date(data.generatedAt).getTime()-Date.now();
@@ -105,6 +132,7 @@ export default function EmployeeStatusBoard(){
     const timer=window.setInterval(()=>setNow(Date.now()+offset),1_000);
     const visible=()=>{
       if(document.visibilityState!=="visible"){
+        stopAttendanceAudio(sound.current.audio);
         generation++;suppressAnimation=true;changeMarks={};setChanges({});latestFlip=null;setLatestFlipId(null);window.clearTimeout(poll);return;
       }
       void tick();
@@ -112,7 +140,7 @@ export default function EmployeeStatusBoard(){
     void tick();
     document.addEventListener("visibilitychange",visible);
     // Stop scheduling and discard late reads; aborting during dev remounts can surface in browser observers.
-    return()=>{disposed=true;window.clearInterval(timer);window.clearTimeout(poll);document.removeEventListener("visibilitychange",visible)};
+    return()=>{disposed=true;window.clearInterval(timer);window.clearTimeout(poll);document.removeEventListener("visibilitychange",visible);const audio=soundState.audio;soundState.audio=null;soundState.enabled=false;if(audio){audio.context.onstatechange=null;stopAttendanceAudio(audio);void audio.context.close().catch(()=>{})}};
   },[]);
 
   async function fullscreen(){
@@ -143,7 +171,13 @@ export default function EmployeeStatusBoard(){
         <small className={error?"employee-status-warning":""}>{t(error)||(clock&&!clock.active?t("自动同步已暂停 · 每日 07:00–22:00"):snapshot?t("自动同步中"):t("正在读取员工状态"))}{lastSync!==null&&t(" · 最后同步 {0} {1}", {0: statusClock(lastSync).date, 1: statusClock(lastSync).time})}</small>
       </div>
       <button className="employee-status-fullscreen" type="button" onClick={()=>void fullscreen()} data-ui-size=""><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5"/></svg>{t("全屏展示")}</button>
+    <div className="employee-status-audio" role="group" aria-label={t("考勤提示音")}>
+      <button type="button" aria-pressed={soundEnabled} disabled={blocked} onClick={()=>soundEnabled?muteSound():void enableSound()}>{t(soundEnabled?"关闭声音":"开启声音")}</button>
+      <label>{t("音量")}<input type="range" min="0" max="100" step="5" value={Math.round(volume*100)} onChange={event=>{const next=Number(event.target.value)/100;setVolume(next);sound.current.volume=next;if(sound.current.audio)sound.current.audio.gain.gain.setValueAtTime(next,sound.current.audio.context.currentTime)}}/><span>{Math.round(volume*100)}%</span></label>
+      <button type="button" disabled={blocked} onClick={()=>void enableSound(true)}>{t("试听：上班 → 下班")}</button>
+    </div>
     </header>
+    {soundError&&<p role="status">{t(soundError)}</p>}
     {fullscreenError&&<p role="status">{t(fullscreenError)}</p>}
     {blocked?<p role="alert">{t(error)}。<a href="/employee-status">{t("重新打开登录页面")}</a></p>:
       <section className="employee-status-grid" aria-label={t("员工状态卡片")}>

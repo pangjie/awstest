@@ -3,6 +3,7 @@ import { t, useLanguage } from "@/app/ui-language";
 import { normalizeWorkType, WAVE_TYPE_DEFINITIONS } from "@/lib/timekeeping/waves";
 
 const CHANNEL_COLORS:Record<string,CSSProperties>={
+  "0024":{backgroundColor:"#e0f3ef",borderColor:"#91c8bb",color:"#216858"},
   usps:{backgroundColor:"#e9edff",borderColor:"#aeb9e6",color:"#354b9a"},
   swiftx:{backgroundColor:"#e2f5fa",borderColor:"#8bc7d4",color:"#126a7c"},
   gofo:{backgroundColor:"#e6f5ea",borderColor:"#a7d5b4",color:"#267044"},

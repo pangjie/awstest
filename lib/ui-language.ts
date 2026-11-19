@@ -7,6 +7,12 @@ export function isLanguage(value: unknown): value is Language {
 
 // Source strings are display keys only. Never translate API values, identifiers or exports.
 export const messages: Record<string, readonly [string, string]> = {
+  "考勤提示音":["Attendance sounds","Sonidos de asistencia"],
+  "开启声音":["Enable sound","Activar sonido"],
+  "关闭声音":["Mute","Silenciar"],
+  "音量":["Volume","Volumen"],
+  "试听：上班 → 下班":["Preview: sign in → sign out","Escuchar: entrada → salida"],
+  "声音无法启用，请检查浏览器和设备音量后重试。":["Sound unavailable. Check your browser and device volume, then retry.","Sonido no disponible. Revise el navegador y el volumen del dispositivo e inténtelo de nuevo."],
   "未归类在岗时间":["Unclassified on-duty time","Tiempo de presencia sin clasificar"],
   "日均用时":["Daily average time","Tiempo medio diario"],
   "参与人次":["Participant-days","Participaciones por día"],

@@ -15,16 +15,17 @@ const compiledFetch=ts.transpileModule(fetchSource,{compilerOptions:{module:ts.M
 async function board(start,employees=[],useFetchWrapper=false){
   let now=Date.parse(start),effect,timerId=0,respond;
   let fetchWithTimeout;
-  const timers=new Map(),requests=[],listeners={},updates=[],states=[];
+  const timers=new Map(),requests=[],listeners={},updates=[],states=[],refs=[],sounds=[];
   const document={visibilityState:"visible",addEventListener:(name,fn)=>listeners[name]=fn,removeEventListener:name=>delete listeners[name]};
   const response=(status=304,items=employees)=>({status,ok:status>=200&&status<300,json:async()=>({revision:1,date:model.statusClock(now).date,generatedAt:new Date(now).toISOString(),employees:items})});
   respond=async url=>response(url.includes("/revision")?304:200);
   const context={exports:{},AbortController,Date:class extends Date{static now(){return now}},document,
     window:{setTimeout:(fn,ms)=>{const id=++timerId;timers.set(id,{fn,at:now+ms});return id},clearTimeout:id=>timers.delete(id),setInterval:()=>0,clearInterval:()=>{}},
     require:name=>{
-      if(name==="react")return {useState:value=>{const index=states.length;states.push(value);return [value,next=>{states[index]=next;updates.push(next)}]},useEffect:fn=>effect=fn};
+      if(name==="react")return {useState:value=>{const index=states.length;states.push(value);return [value,next=>{states[index]=next;updates.push(next)}]},useEffect:fn=>effect=fn,useRef:value=>{const ref={current:value};refs.push(ref);return ref}};
       if(name==="react/jsx-runtime")return {jsx:()=>null,jsxs:()=>null};
       if(name==="@/lib/employee-status")return model;
+      if(name==="./attendance-audio")return {stopAttendanceAudio:()=>{},playAttendanceAudio:(_audio,kinds)=>sounds.push(...kinds)};
       if(name==="@/lib/timekeeping/standard-tasks")return exportLoader()("lib/timekeeping/standard-tasks.ts");
       if(name==="@/app/timekeeping/format")return exportLoader()("app/timekeeping/format.ts");
       if(name==="@/app/ui-language")return {useLanguage:()=>({language:"zh"}),t:(source,values={})=>source.replace(/\{(\d+)\}/g,(token,key)=>key in values?String(values[key]):token)};
@@ -38,7 +39,7 @@ async function board(start,employees=[],useFetchWrapper=false){
   vm.runInNewContext(compiled,context);context.exports.default();const cleanup=effect();
   const settle=async()=>{for(let n=0;n<20;n++)await Promise.resolve()};
   await settle();
-  return {requests,updates,response,cleanup,get changes(){return states[6]},get latestFlipId(){return states[7]},setRespond:fn=>respond=fn,
+  return {requests,updates,response,cleanup,sounds,enableSound(){refs[0].current.enabled=true;refs[0].current.audio={context:{close:async()=>{}}}},get changes(){return states[6]},get latestFlipId(){return states[7]},setRespond:fn=>respond=fn,
     async advance(ms){now+=ms;for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn()}await settle()},
     async visible(value){document.visibilityState=value?"visible":"hidden";listeners.visibilitychange();await settle()},
   };
@@ -273,5 +274,24 @@ test("status polling is serial, retries failed snapshots and stops on lost permi
     await app.advance(1000);assert.equal(app.requests.length,4);
     await app.advance(30000);assert.equal(app.requests.length,4);
     assert.ok(app.updates.includes(null));
+  }finally{app.cleanup()}
+});
+
+
+test("attendance sounds only play for fresh attendance transitions, deduplicate and suppress reconnects",async()=>{
+  const a={id:1,name:"A",state:"off",task:null},b={...a,id:2,name:"B"};
+  const app=await board("2026-09-29T15:00:00Z",[a,b]);
+  const update=async items=>{app.setRespond(async()=>app.response(200,items));await app.advance(1000)};
+  try{
+    app.enableSound();assert.deepEqual(app.sounds,[]);
+    await update([{...a,state:"ready"},{...b,state:"picking",task:"wave"}]);assert.deepEqual(app.sounds,["in"]);
+    await update([{...a,state:"warehouse",task:"仓务"},{...b,state:"ready"}]);assert.deepEqual(app.sounds,["in"]);
+    await update([a,{...b,state:"ready"}]);assert.deepEqual(app.sounds,["in","out"]);
+    await update([{...a,state:"ready"},b]);assert.deepEqual(app.sounds,["in","out","in","out"]);
+    await app.visible(false);app.setRespond(async()=>app.response(200,[a,b]));await app.visible(true);
+    assert.equal(app.sounds.length,4);
+    app.setRespond(async()=>{throw new Error("offline")});await app.advance(1000);
+    app.setRespond(async()=>app.response(200,[{...a,state:"ready"},b]));await app.advance(2000);
+    assert.equal(app.sounds.length,4);
   }finally{app.cleanup()}
 });
