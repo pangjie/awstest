@@ -35,6 +35,19 @@ export function sortStatusEmployees(employees:StatusEmployee[]){
   return employees.sort((a,b)=>a.name.localeCompare(b.name,"zh-CN")||a.id-b.id);
 }
 
+export function attendanceSounds(previous:StatusEmployee[],current:StatusEmployee[]):Array<"in"|"out">{
+  const before=new Map(previous.map(employee=>[employee.id,employee.state]));
+  const onDuty=(state:EmployeeStatus)=>state==="picking"||state==="warehouse"||state==="ready";
+  let signIn=false,signOut=false;
+  for(const employee of current){
+    const old=before.get(employee.id);
+    if(!old)continue;
+    if(!onDuty(old)&&onDuty(employee.state))signIn=true;
+    if(onDuty(old)&&employee.state==="off")signOut=true;
+  }
+  return [...(signIn?["in" as const]:[]),...(signOut?["out" as const]:[])];
+}
+
 export function employeeElapsedMs(employee:StatusEmployee,generatedAt:string,now:number){
   const running=employee.state==="picking"||employee.state==="warehouse"||employee.state==="ready";
   return (employee.elapsedMs??0)+(running?Math.max(0,now-Date.parse(generatedAt)):0);

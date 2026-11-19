@@ -7,6 +7,22 @@ const load=exportLoader();
 const {parseExportQuery,quotaWindow}=load("lib/wave-export-contract.ts");
 const query=(extra="")=>parseExportQuery(new URLSearchParams(`date=2026-09-01${extra}`));
 
+test("0024 channel preserves leading zeros for every wave type and import format",()=>{
+  const {parseWaveText}=load("lib/timekeeping/waves.ts");
+  for(const type of ["爆品","单件","多件","混件"]){
+    for(const delimiter of ["\t",","]){
+      for(const cells of [["0024","W20261119001",type,"2","3","4"],[`0024${type}`,"W20261119001","2","3","4"]]){
+        const [wave]=parseWaveText(cells.join(delimiter));
+        assert.equal(wave.channelName,"0024");
+        assert.equal(wave.channelType,type);
+        assert.equal(wave.client,"0024");
+        assert.deepEqual([wave.skuCount,wave.orderCount,wave.pieceCount],[2,3,4]);
+      }
+    }
+  }
+  assert.equal(parseWaveText("24\tW20261119001\t单件\t2\t3\t4")[0].channelName,"24");
+});
+
 test("export dates are strict, bounded, inclusive and DST aware",()=>{
   assert.equal(query().date,"2026-09-01");
   for(const text of ["","date=2026-02-30","date=not-a-date","date=9999-12-31"])assert.throws(()=>parseExportQuery(new URLSearchParams(text)));
@@ -20,10 +36,11 @@ test("export dates are strict, bounded, inclusive and DST aware",()=>{
 
 test("Excel preserves codes, numeric durations over 24h and literal formula-like names",async()=>{
   const {buildWaveWorkbook,exportMetadata}=load("lib/wave-export-workbook.ts");
-  const row={channel:"USPS",type:"多件",waveNo:"000123",statusLabel:"已完成",skuCount:2,orderCount:3,pieceCount:100,lead:"=1+1",helpers:["员工甲"],startedAt:"2026-09-01T12:00:00Z",completedAt:null,totalMs:100*3600000,hourlyPieces:1,recordStatus:"已完成"};
+  const row={channel:"0024",type:"多件",waveNo:"000123",statusLabel:"已完成",skuCount:2,orderCount:3,pieceCount:100,lead:"=1+1",helpers:["员工甲"],startedAt:"2026-09-01T12:00:00Z",completedAt:null,totalMs:100*3600000,hourlyPieces:1,recordStatus:"已完成"};
   const bytes=await buildWaveWorkbook([row],exportMetadata(query(),"2026-10-01T00:00:00Z",1));
   const book=new ExcelJS.Workbook();await book.xlsx.load(bytes);
   const sheet=book.getWorksheet("波次数据");
+  assert.equal(sheet.getCell("A2").value,"0024");
   assert.equal(sheet.getCell("H1").value,"姓名");
   assert.equal(sheet.getCell("L1").value,"用时");
   assert.equal(sheet.getCell("C2").value,"000123");assert.equal(sheet.getCell("H2").value,"=1+1");
