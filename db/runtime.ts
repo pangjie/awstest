@@ -184,5 +184,6 @@ async function initializeRuntimeSchema() {
 
 export async function isDatabaseReady() {
   await ensureRuntimeSchema();
-  await getPool().query("SELECT 1");
+  // Timekeeping initialization requires PL/pgSQL; SELECT 1 misses broken runtime libraries.
+  await getPool().query("DO $$ BEGIN PERFORM 1; END $$");
 }

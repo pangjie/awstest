@@ -7,6 +7,12 @@ export function isLanguage(value: unknown): value is Language {
 
 // Source strings are display keys only. Never translate API values, identifiers or exports.
 export const messages: Record<string, readonly [string, string]> = {
+  "扫描工卡或输入姓名":["Scan employee card or enter name","Escanee la tarjeta o escriba un nombre"],
+  "工况":["Work status","Estado laboral"],
+  "输入姓名选择员工":["Type a name to select an employee","Escriba un nombre para elegir empleado"],
+  "输入姓名查找在职员工":["Type a name to find active employees","Escriba un nombre para buscar empleados activos"],
+  "没有匹配的在职员工":["No matching active employees","No hay empleados activos coincidentes"],
+  "员工姓名读取失败，请重新点击输入框重试":["Could not load names. Focus the input again to retry.","No se pudieron cargar los nombres. Vuelva a seleccionar el campo para reintentar."],
   "考勤提示音":["Attendance sounds","Sonidos de asistencia"],
   "开启声音":["Enable sound","Activar sonido"],
   "关闭声音":["Mute","Silenciar"],
