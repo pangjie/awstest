@@ -3,12 +3,19 @@ import { authorizePageAccess } from "../../../../../lib/internal-auth";
 import { performScan, type ScanInput } from "../../../../../lib/timekeeping/scan";
 import { readTodayScanOperations, readWorkItems } from "../../../../../lib/timekeeping/read-model";
 import { getEmployeeSnapshot, getTimeRevision } from "../../../../../lib/timekeeping/data";
+import { getPool } from "../../../../../db";
+import { ensureTimekeepingSchema } from "../../../../../db/timekeeping-runtime";
 
 export const dynamic="force-dynamic";
 
 export async function GET(request:NextRequest){
   const access=await authorizePageAccess("time-scan");
   if(!access.authorized)return NextResponse.json({ok:false,error:access.message},{status:access.status});
+  if(request.nextUrl.searchParams.get("lookup")==="employees"){
+    await ensureTimekeepingSchema();
+    const result=await getPool().query(`SELECT id,name,organization_type AS organization,badge_code AS "legacyBadgeCode",COALESCE(employee_code,badge_code) AS "badgeCode" FROM time_employees WHERE active=true ORDER BY name,id`);
+    return NextResponse.json({employees:result.rows},{headers:{"cache-control":"no-store"}});
+  }
   const employeeId=request.nextUrl.searchParams.get("employeeId");
   if(employeeId!==null&&(!/^\d+$/.test(employeeId)||!Number.isSafeInteger(Number(employeeId))||Number(employeeId)<1))return NextResponse.json({ok:false,error:"员工编号无效"},{status:400});
   // Capture the revision before reading so concurrent changes are caught by the next poll.

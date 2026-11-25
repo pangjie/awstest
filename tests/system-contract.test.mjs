@@ -320,7 +320,7 @@ test("keeps the fresh timekeeping system isolated behind five page permissions",
   assert.match(scanLogic,/isNull\(timeWorkItems\.interruptedAt\)/);
   assert.match(scanLogic,/set\(\{interruptedAt:null\}\)/);
   const scanPage=await read("app/timekeeping/scan-page.tsx");
-  assert.match(scanPage,/window\.setTimeout\(\(\)=>\{if\(snapshot\)selectScannedCode\(normalized\);else void scan\(normalized\)\},320\)/);
+  assert.match(scanPage,/<EmployeeNamePicker[^>]*onCode=\{selectScannedCode\}/);
   assert.match(scanPage,/isValidEmployeeId\(normalized\)\)\{void scan\(normalized\);return\}/);
   assert.match(scanPage,/className="time-scan-grid"/);
   assert.doesNotMatch(scanPage,/\{snapshot&&<div className="time-scan-grid"/);

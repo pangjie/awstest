@@ -1,7 +1,7 @@
 "use client";
 import { t, useLanguage, taskText } from "@/app/ui-language";
 
-import { type Dispatch, type SetStateAction, FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/client-fetch";
 import { workDate } from "@/lib/timekeeping/time";
 import { isValidEmployeeId } from "@/lib/timekeeping/employee-id";
@@ -10,6 +10,7 @@ import { formatClock, formatClockWithSeconds, formatDurationWithSeconds, stateLa
 import type { EmployeeSnapshot, ScanWaveSortKey, ScanWaveSortState, ScanResponse, WorkItem, WorkItemsResponse } from "./types";
 import { channelLabel, waveTypeInfo, WaveChannelTag, WaveTypeTag } from "./wave-display";
 import { LeadSummary } from "./wave-participants";
+import { EmployeeNamePicker } from "./employee-name-picker";
 
 type ScanSelection={key:string;code:string;label:string;labelCode?:string;projectId?:number;extra?:Record<string,unknown>;confirmMessage?:string;confirmValues?:Record<string,string|undefined>};
 
@@ -81,9 +82,9 @@ export default function ScanPage({initialBadge,sortState,setSortState}:{initialB
       const response=await timeApi<ScanResponse>("/api/v1/timekeeping/scan",{method:"POST",body:JSON.stringify({code:normalized,employeeId:snapshot?.employee.id,requestId:crypto.randomUUID(),terminalId:"browser-main",...extra})});
       if(response.snapshot){if(employeeRef.current!==response.snapshot.employee.id)setHistoryTab("personal");setSnapshot(response.snapshot);employeeRef.current=response.snapshot.employee.id;snapshotBaselineRef.current=performance.now();setSnapshotElapsed(0)}
       await loadWorkItems();
-      setSelection(null);
+      setSelection(null);setCode("");
     }catch(scanError){setError(scanError instanceof Error?scanError.message:"扫描操作失败")}
-    finally{busyRef.current=false;setPending(false);setCode("");requestAnimationFrame(()=>inputRef.current?.focus())}
+    finally{busyRef.current=false;setPending(false);requestAnimationFrame(()=>inputRef.current?.focus())}
   },[loadWorkItems,snapshot]);
 
   const currentLeadWave=snapshot?.shift&&snapshot.currentProject?.workType==="wave"&&snapshot.currentProject.assignmentRole==="lead"&&snapshot.currentProject.status==="active"?snapshot.currentProject:null;
@@ -124,14 +125,8 @@ export default function ScanPage({initialBadge,sortState,setSortState}:{initialB
     setError(`无法识别操作码或任务 ${normalized}`);setCode("");
   },[scan,selectAction,selectItem,workItems]);
 
-  useEffect(()=>{
-    const normalized=code.trim();
-    if(pending||normalized.length<4)return;
-    const timer=window.setTimeout(()=>{if(snapshot)selectScannedCode(normalized);else void scan(normalized)},320);
-    return()=>window.clearTimeout(timer);
-  },[code,pending,scan,selectScannedCode,snapshot]);
+  const isTaskCode=useCallback((value:string)=>["ACT-CLOCKIN","ACT-OUT","OUT","下班","ACT-WAVE-COMPLETE"].includes(value)||[...(workItems?.standardTasks??[]),...(workItems?.currentWaves??[])].some(item=>[item.barcode,item.code,item.waveNo].some(code=>code?.toUpperCase()===value)),[workItems]);
 
-  const submit=(event:FormEvent)=>{event.preventDefault();const normalized=code.trim();if(!normalized)return;if(snapshot)selectScannedCode(normalized);else void scan(normalized)};
   const confirmSelection=()=>{
     if(!selection||pending)return;
     if(!snapshot||selectionContextRef.current!==selectionContext(snapshot)){
@@ -153,7 +148,7 @@ export default function ScanPage({initialBadge,sortState,setSortState}:{initialB
 
     <div className="time-scan-grid">
       <section className="time-card time-current-worker">
-        <div className="time-current-employee"><form className="time-scan-title-input" onSubmit={submit}><input ref={inputRef} className={!snapshot?"time-employee-id-entry":undefined} type="text" value={code} onChange={event=>setCode(event.target.value)} placeholder={pending?t("识别中…"):snapshot?t("扫描操作码或任务条码"):t("扫描员工卡")} autoComplete="off" autoCapitalize="characters" spellCheck={false} data-1p-ignore="true" data-lpignore="true" aria-label={t("扫描内容")}/></form><div className="time-worker-name"><b title={snapshot?.employee.name}>{snapshot?.employee.name??t("扫描员工后显示")}</b><span className={`time-state ${snapshot?.state??"off"}`}>{snapshot?t(stateLabel(snapshot.state)):t("等待员工")}</span></div></div>
+        <div className="time-current-employee"><EmployeeNamePicker query={code} setQuery={setCode} inputRef={inputRef} disabled={pending} isTaskCode={isTaskCode} onCode={selectScannedCode} onSelect={badge=>void scan(badge)}/><div className="time-worker-name"><b title={snapshot?.employee.name}>{snapshot?.employee.name??t("扫描员工后显示")}</b><span className={`time-state ${snapshot?.state??"off"}`}>{snapshot?t(stateLabel(snapshot.state)):t("等待员工")}</span></div></div>
         <dl><div><dt data-ui-size="">{t("Sign In")}</dt><dd>{snapshot?formatClock(snapshot.shift?.clockIn):"—"}</dd></div><div><dt data-ui-size="">{t("今日在岗")}</dt><dd>{snapshot?formatMinuteDuration(snapshot.today.onDutyMs+(snapshot.shift&&snapshot.shift.workDate===workDate()?snapshotElapsed:0)):"—"}</dd></div><div><dt data-ui-size="">{t("今日工作")}</dt><dd>{snapshot?formatMinuteDuration(snapshot.today.productiveMs+(snapshot.shift&&snapshot.state==="working"&&snapshot.shift.workDate===workDate()?snapshotElapsed:0)):"—"}</dd></div></dl>
 
         <div className="time-current-task"><small>{t("当前任务")}</small><b>{snapshot?.currentProject?`${snapshot.currentProject.code} · ${taskText(snapshot.currentProject.name,snapshot.currentProject.code)}`:snapshot?t("暂无任务"):t("扫描员工后显示")}</b>{snapshot?.currentProject?.assignmentRole?<span>{snapshot.currentProject.assignmentRole==="lead"?t("主负责人"):t("协作人员")}</span>:snapshot?.currentProject?.workType==="standard"&&snapshot.state!=="working"?<span>{t("已暂停")}</span>:null}</div>
